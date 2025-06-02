@@ -45,20 +45,24 @@ var (
 func generateWithAI(details ProjectDetails) (GeneratedPitch, error) {
 	client := openai.NewClient(os.Getenv("OPENAI_API_KEY"))
 
-	prompt := fmt.Sprintf(`En tant qu'expert en création de startups, génère un pitch business complet et unique pour l'idée suivante :
+	prompt := fmt.Sprintf(`Tu es un expert en création de startups. Génère un pitch business complet et unique basé exclusivement sur l'idée suivante :
 
-Idée : %s
+"%s"
 
-Le pitch doit contenir ces sections claires et distinctes :
+Le pitch doit être entièrement original et contenir ces sections :
 
-1. [Problème] Décris le problème spécifique que cette idée résout (50 mots max)
-2. [Solution] Explique en quoi cette solution est innovante (50 mots max)
-3. [Marché] Détaille le public cible précis (âge, profession, besoins) (30 mots max)
-4. [Valeur] Quel est l'avantage compétitif unique ? (30 mots max)
-5. [Canaux] Comment les clients seront-ils atteints ? (30 mots max)
-6. [Modèle] Comment l'argent sera-t-il gagné ? (abonnement, publicité, etc.) (30 mots max)
+ [Problème] Décris le problème concret que cette idée résout (50 mots max)
+ [Solution] Présente la solution spécifique proposée (50 mots max)
+ [Marché] Identifie précisément le public cible (30 mots max)
+ [Valeur] Détaille l'avantage unique par rapport aux alternatives (30 mots max)
+ [Canaux] Explique comment atteindre les clients (30 mots max)
+ [Modèle] Précise comment générer des revenus (30 mots max)
 
-Sois concret, spécifique et évite les généralités.`, details.Idea)
+Important : 
+- Sois concret et spécifique
+- Évite les phrases génériques
+- Adapte chaque section à l'idée fournie
+- Utilise exclusivement les informations fournies par l'utilisateur`, details.Idea)
 
 	resp, err := client.CreateChatCompletion(
 		context.Background(),
@@ -70,7 +74,7 @@ Sois concret, spécifique et évite les généralités.`, details.Idea)
 					Content: prompt,
 				},
 			},
-			Temperature: 0.7,
+			Temperature: 0.8, // Augmenté pour plus de créativité
 		},
 	)
 
@@ -95,13 +99,16 @@ func parseAIPitchResponse(content string) GeneratedPitch {
 		"Modèle":   &pitch.BusinessModel,
 	}
 
-	re := regexp.MustCompile(`(?m)^\d+\.\s*\[(.*?)\]\s*(.*?)(?:\n\d+\.|$)`)
+	// Regex améliorée pour capturer les sections
+	re := regexp.MustCompile(`(?mi)^\d+\.\s*\[(.*?)\]\s*(.*?)(?:\n\d+\.|$)`)
 	matches := re.FindAllStringSubmatch(content, -1)
 
 	for _, match := range matches {
 		if len(match) >= 3 {
-			if section, ok := sections[match[1]]; ok {
-				*section = strings.TrimSpace(match[2])
+			sectionName := strings.TrimSpace(match[1])
+			sectionContent := strings.TrimSpace(match[2])
+			if section, ok := sections[sectionName]; ok {
+				*section = sectionContent
 			}
 		}
 	}
@@ -150,8 +157,9 @@ func pitchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.TrimSpace(details.Idea) == "" || len(details.Idea) < 10 {
-		http.Error(w, "Veuillez fournir une idée plus détaillée (min 10 caractères)", http.StatusBadRequest)
+	details.Idea = strings.TrimSpace(details.Idea)
+	if details.Idea == "" || len(details.Idea) < 15 {
+		http.Error(w, "Veuillez fournir une idée plus détaillée (min 15 caractères)", http.StatusBadRequest)
 		return
 	}
 
