@@ -7,46 +7,49 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
-	"time"
 
 	"github.com/joho/godotenv"
 	openai "github.com/sashabaranov/go-openai"
 )
 
-// Structures de données
 type ProjectDetails struct {
 	Idea          string `json:"idea"`
 	TargetMarket  string `json:"targetMarket"`
-	Competitors   string `json:"competitors"`
 	UniqueAspect  string `json:"uniqueAspect"`
 	BusinessModel string `json:"businessModel"`
 }
 
-// Variables globales
+type GeneratedPitch struct {
+	Problem          string `json:"problem"`
+	Solution         string `json:"solution"`
+	TargetMarket     string `json:"targetMarket"`
+	ValueProposition string `json:"valueProposition"`
+	Channels         string `json:"channels"`
+	BusinessModel    string `json:"businessModel"`
+	FullPitch        string `json:"fullPitch"`
+}
+
 var examplePitches = []string{
 	"Problème: Les petits commerçants ont du mal à gérer leur inventaire\nSolution: Une app mobile de gestion d'inventaire simplifiée\nClient cible: Petits commerçants indépendants\nValeur: Gain de temps et réduction des erreurs\nCanaux: Boutique en ligne, réseaux sociaux",
 	"Problème: Manque de solutions de livraison rapide en zone rurale\nSolution: Réseau de livreurs locaux à vélo\nClient cible: Commerces ruraux et habitants\nValeur: Livraison en moins de 2h à prix abordable\nCanaux: Partenariats avec commerces, site web",
 }
 
-// Fonction de génération avec OpenAI
-func generateWithAI(details ProjectDetails) (string, error) {
+func generateWithAI(details ProjectDetails) (GeneratedPitch, error) {
 	client := openai.NewClient(os.Getenv("OPENAI_API_KEY"))
 
-	prompt := fmt.Sprintf(`Génère un pitch business professionnel en français basé sur ces éléments:
-	Idée: %s
-	Marché cible: %s
-	Aspect unique: %s
-	Modèle économique: %s
-	
-	Le pitch doit être structuré avec des sections claires et un ton persuasif. Inclure:
-	1. Problème identifié
-	2. Solution proposée
-	3. Marché cible
-	4. Avantage compétitif
-	5. Modèle économique
-	6. Potentiel de croissance`,
-		details.Idea, details.TargetMarket, details.UniqueAspect, details.BusinessModel)
+	prompt := fmt.Sprintf(`Tu es un expert en création de pitch business. Crée un pitch UNIQUE basé sur cette idée: "%s"
+
+Structure obligatoire:
+1. [Problème] (50 mots max) - Décris le problème concret
+2. [Solution] (50 mots max) - Solution spécifique proposée
+3. [Marché] (30 mots max) - Détaille le public cible
+4. [Valeur] (30 mots max) - Avantage unique précis
+5. [Canaux] (30 mots max) - Méthodes de distribution concrètes
+6. [Modèle] (30 mots max) - Modèle économique spécifique
+
+Évite les généralités. Sois précis et créatif.`, details.Idea)
 
 	resp, err := client.CreateChatCompletion(
 		context.Background(),
@@ -58,48 +61,55 @@ func generateWithAI(details ProjectDetails) (string, error) {
 					Content: prompt,
 				},
 			},
+			Temperature: 0.9,
 		},
 	)
 
 	if err != nil {
-		return "", fmt.Errorf("erreur OpenAI: %v", err)
+		return GeneratedPitch{}, fmt.Errorf("erreur OpenAI: %v", err)
 	}
 
-	return resp.Choices[0].Message.Content, nil
+	return parseAIPitchResponse(resp.Choices[0].Message.Content), nil
 }
 
-// Fonction de génération locale (fallback)
+func parseAIPitchResponse(content string) GeneratedPitch {
+	pitch := GeneratedPitch{FullPitch: content}
+
+	sections := map[string]*string{
+		"Problème": &pitch.Problem,
+		"Solution": &pitch.Solution,
+		"Marché":   &pitch.TargetMarket,
+		"Valeur":   &pitch.ValueProposition,
+		"Canaux":   &pitch.Channels,
+		"Modèle":   &pitch.BusinessModel,
+	}
+
+	re := regexp.MustCompile(`(\d+\.\s*\[(.*?)\]\s*)(.*?)(?=\n\d+\.|$)`)
+	matches := re.FindAllStringSubmatch(content, -1)
+
+	for _, match := range matches {
+		if section, ok := sections[match[2]]; ok {
+			*section = strings.TrimSpace(match[3])
+		}
+	}
+
+	return pitch
+}
+
 func generateLocalPitch(details ProjectDetails) (string, error) {
-	pitch := fmt.Sprintf(`**PITCH BUSINESS - %s**
+	idea := getValueOrDefault(details.Idea, "votre idée")
 
-🎯 **PROBLÈME IDENTIFIÉ**
-%s
+	return fmt.Sprintf(`Pitch pour: %s
 
-💡 **SOLUTION PROPOSÉE**
-%s
-
-👥 **CLIENT CIBLE**
-%s
-
-⭐ **AVANTAGE COMPÉTITIF**
-%s
-
-💰 **MODÈLE ÉCONOMIQUE**
-%s
-
-🚀 **POTENTIEL**
-Marché en croissance avec opportunité de différenciation.`,
-		getValueOrDefault(details.Idea, "Idée innovante"),
-		getValueOrDefault(details.Idea, "Problème non spécifié"),
-		getValueOrDefault(details.Idea, "Solution innovante"),
-		getValueOrDefault(details.TargetMarket, "Marché large"),
-		getValueOrDefault(details.UniqueAspect, "Différenciation claire"),
-		getValueOrDefault(details.BusinessModel, "Modèle à définir"))
-
-	return pitch, nil
+Problème: Les utilisateurs ont besoin de solutions pour "%s"
+Solution: Approche innovante combinant technologie et méthodologie
+Marché: Public intéressé par %s
+Valeur: Solution %s unique et personnalisable
+Canaux: Plateforme en ligne avec marketing digital
+Modèle: Freemium avec options payantes`,
+		idea, idea, idea, idea), nil
 }
 
-// Fonction utilitaire pour gérer les valeurs vides
 func getValueOrDefault(value, defaultValue string) string {
 	if strings.TrimSpace(value) == "" {
 		return defaultValue
@@ -107,18 +117,29 @@ func getValueOrDefault(value, defaultValue string) string {
 	return value
 }
 
-// Middleware CORS
-func enableCORS(w http.ResponseWriter) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+func isGenericPitch(content string) bool {
+	genericTerms := []string{"solution innovante", "marché large", "modèle à définir"}
+	for _, term := range genericTerms {
+		if strings.Contains(content, term) {
+			return true
+		}
+	}
+	return false
 }
 
-// Handlers HTTP
-func pitchHandler(w http.ResponseWriter, r *http.Request) {
-	enableCORS(w)
-
+func enableCORS(w *http.ResponseWriter, r *http.Request) bool {
+	(*w).Header().Set("Access-Control-Allow-Origin", "*")
 	if r.Method == http.MethodOptions {
+		(*w).Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		(*w).Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		(*w).WriteHeader(http.StatusOK)
+		return true
+	}
+	return false
+}
+
+func pitchHandler(w http.ResponseWriter, r *http.Request) {
+	if enableCORS(&w, r) {
 		return
 	}
 
@@ -134,49 +155,39 @@ func pitchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.TrimSpace(details.Idea) == "" {
-		http.Error(w, "L'idée principale est requise", http.StatusBadRequest)
+	if strings.TrimSpace(details.Idea) == "" || len(details.Idea) < 10 {
+		http.Error(w, "Veuillez fournir une idée plus détaillée (min 10 caractères)", http.StatusBadRequest)
 		return
 	}
 
-	var pitch string
+	var pitchContent string
+	var pitchErr error
+
 	if os.Getenv("OPENAI_API_KEY") != "" {
-		pitch, err = generateWithAI(details)
-		if err != nil {
-			log.Printf("Erreur OpenAI, fallback local: %v", err)
-			pitch, err = generateLocalPitch(details)
+		aiPitch, aiErr := generateWithAI(details)
+		if aiErr == nil && !isGenericPitch(aiPitch.FullPitch) {
+			pitchContent = aiPitch.FullPitch
+		} else {
+			log.Printf("Fallback local: %v", aiErr)
+			pitchContent, pitchErr = generateLocalPitch(details)
 		}
 	} else {
-		pitch, err = generateLocalPitch(details)
+		pitchContent, pitchErr = generateLocalPitch(details)
 	}
 
-	if err != nil {
-		http.Error(w, "Erreur lors de la génération: "+err.Error(), http.StatusInternalServerError)
+	if pitchErr != nil {
+		http.Error(w, "Erreur lors de la génération: "+pitchErr.Error(), http.StatusInternalServerError)
 		return
-	}
-
-	newPitch := Pitch{
-		ID:        fmt.Sprintf("%d", time.Now().Unix()),
-		Content:   pitch,
-		CreatedAt: time.Now(),
-	}
-
-	err = savePitch(newPitch)
-	if err != nil {
-		log.Printf("Erreur sauvegarde: %v", err)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
-		"pitch": pitch,
-		"id":    newPitch.ID,
+		"pitch": pitchContent,
 	})
 }
 
 func examplesHandler(w http.ResponseWriter, r *http.Request) {
-	enableCORS(w)
-
-	if r.Method == http.MethodOptions {
+	if enableCORS(&w, r) {
 		return
 	}
 
@@ -189,64 +200,21 @@ func examplesHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(examplePitches)
 }
 
-func shareHandler(w http.ResponseWriter, r *http.Request) {
-	enableCORS(w)
-
-	if r.Method == http.MethodOptions {
-		return
-	}
-
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var data struct {
-		Pitch string `json:"pitch"`
-		Email string `json:"email"`
-	}
-	err := json.NewDecoder(r.Body).Decode(&data)
-	if err != nil {
-		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if !strings.Contains(data.Email, "@") {
-		http.Error(w, "Adresse email invalide", http.StatusBadRequest)
-		return
-	}
-
-	log.Printf("Pitch partagé vers: %s", data.Email)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"status":  "success",
-		"message": "Pitch partagé avec succès",
-	})
-}
-
-func staticHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/" {
-		r.URL.Path = "/index.html"
-	}
-	http.ServeFile(w, r, "./frontend"+r.URL.Path)
-}
-
 func main() {
-	err := godotenv.Load()
+	err := godotenv.Load("../.env")
 	if err != nil {
 		log.Println("Fichier .env non trouvé, utilisation des variables système")
 	}
 
-	err = initStorage()
-	if err != nil {
-		log.Printf("Erreur initialisation stockage: %v", err)
-	}
-
 	http.HandleFunc("/generate-pitch", pitchHandler)
 	http.HandleFunc("/examples", examplesHandler)
-	http.HandleFunc("/share", shareHandler)
-	http.HandleFunc("/", staticHandler)
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			http.ServeFile(w, r, "../frontend/index.htm")
+		} else {
+			http.ServeFile(w, r, "../frontend"+r.URL.Path)
+		}
+	})
 
 	port := os.Getenv("PORT")
 	if port == "" {
