@@ -34,13 +34,24 @@ func initStorage() error {
 	// Vérifie si le fichier existe
 	if _, err := os.Stat(storageFile); os.IsNotExist(err) {
 		// Crée un fichier vide si inexistant
-		return os.WriteFile(storageFile, []byte("{}"), 0644)
+		emptyData := make(map[string]Pitch)
+		data, err := json.MarshalIndent(emptyData, "", "  ")
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(storageFile, data, 0644)
 	}
 
 	// Lit le fichier
 	data, err := os.ReadFile(storageFile)
 	if err != nil {
 		return err
+	}
+
+	// Vérifier si le fichier est vide
+	if len(data) == 0 {
+		pitches = make(map[string]Pitch)
+		return nil
 	}
 
 	// Désérialise les données
@@ -81,7 +92,7 @@ func saveToFile() error {
 
 // generateID génère un ID unique basé sur le timestamp
 func generateID() string {
-	return fmt.Sprintf("%d", time.Now().UnixNano())
+	return fmt.Sprintf("pitch_%d", time.Now().UnixNano())
 }
 
 // getPitch récupère un pitch par son ID (version thread-safe)
@@ -91,4 +102,30 @@ func getPitch(id string) (Pitch, bool) {
 
 	pitch, exists := pitches[id]
 	return pitch, exists
+}
+
+// getAllPitches récupère tous les pitches (version thread-safe)
+func getAllPitches() map[string]Pitch {
+	pitchesMu.RLock()
+	defer pitchesMu.RUnlock()
+
+	// Créer une copie pour éviter les accès concurrents
+	result := make(map[string]Pitch)
+	for k, v := range pitches {
+		result[k] = v
+	}
+	return result
+}
+
+// deletePitch supprime un pitch par son ID
+func deletePitch(id string) error {
+	pitchesMu.Lock()
+	defer pitchesMu.Unlock()
+
+	if _, exists := pitches[id]; !exists {
+		return fmt.Errorf("pitch with ID %s not found", id)
+	}
+
+	delete(pitches, id)
+	return saveToFile()
 }

@@ -4,85 +4,68 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Générateur de Pitch Business</title>
-    <link rel="stylesheet" href="/frontend/styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="container">
-        <h1>Assistant Pitch Business Pro</h1>
-        <p class="subtitle">Transformez votre idée en pitch convaincant</p>
-        
-        <div class="tabs">
-            <button class="tab-btn active" data-tab="generator">Générateur</button>
-            <button class="tab-btn" data-tab="examples">Exemples</button>
-            <button class="tab-btn" data-tab="saved">Sauvegardés</button>
+        <div class="header">
+            <h1><i class="fas fa-rocket"></i> Pitch Business</h1>
+            <p>Transformez votre idée en pitch convaincant</p>
         </div>
         
-        <div class="tab-content active" id="generator">
-            <div class="form-container">
-                <div class="form-group">
-                    <label for="projectIdea">Idée principale*</label>
-                    <textarea id="projectIdea" placeholder="Décrivez votre idée de projet en quelques mots..."></textarea>
-                </div>
-                
-                <div class="form-group">
-                    <label for="targetMarket">Marché cible</label>
-                    <input type="text" id="targetMarket" placeholder="Qui sont vos clients cibles?">
-                </div>
-                
-                <div class="form-group">
-                    <label for="competitors">Concurrents principaux</label>
-                    <input type="text" id="competitors" placeholder="Qui sont vos principaux concurrents?">
-                </div>
-                
-                <div class="form-group">
-                   package main
-
-                 <label for="uniqueAspect">Aspect unique</label>
-                    <input type="text" id="uniqueAspect" placeholder="Qu'est-ce qui rend votre solution unique?">
-                </div>
-                
-                <div class="form-group">
-                    <label for="businessModel">Modèle économique</label>
-                    <input type="text" id="businessModel" placeholder="Comment allez-vous gagner de l'argent?">
-                </div>
-                
-                <button id="generateBtn"><i class="fas fa-magic"></i> Générer le pitch</button>
+        <div class="form-container">
+            <div class="form-group">
+                <label for="projectIdea">
+                    <i class="fas fa-lightbulb"></i> Décrivez votre idée de projet *
+                </label>
+                <textarea id="projectIdea" 
+                          placeholder="Exemple : Une application mobile qui aide les petits commerçants à gérer leurs stocks facilement..." 
+                          rows="4" required></textarea>
             </div>
             
-            <div class="result-container hidden" id="resultContainer">
-                <h2>Votre Pitch Business</h2>
-                <div class="pitch-result" id="pitchResult" contenteditable="true"></div>
-                <div class="action-buttons">
-                    <button id="copyBtn"><i class="far fa-copy"></i> Copier</button>
-                    <button id="saveBtn"><i class="far fa-save"></i> Sauvegarder</button>
-                    <button id="shareBtn"><i class="fas fa-share-alt"></i> Partager</button>
-                </div>
+            <div class="form-group">
+                <label for="targetMarket">
+                    <i class="fas fa-users"></i> Qui sont vos clients cibles ?
+                </label>
+                <input type="text" id="targetMarket" 
+                       placeholder="Exemple : Petits commerçants, restaurateurs, entrepreneurs...">
             </div>
-        </div>
-        
-        <div class="tab-content" id="examples">
-            <h2>Exemples de Pitchs</h2>
-            <div class="examples-list" id="examplesList"></div>
-        </div>
-        
-        <div class="tab-content" id="saved">
-            <h2>Vos Pitchs Sauvegardés</h2>
-            <div class="saved-list" id="savedList"></div>
-        </div>
-        
-        <!-- Modal de partage -->
-        <div class="modal hidden" id="shareModal">
-            <div class="modal-content">
-                <span class="close-btn">&times;</span>
-                <h3>Partager ce pitch</h3>
-                <input type="email" id="shareEmail" placeholder="Adresse email du destinataire">
-                <button id="confirmShareBtn">Envoyer</button>
-                <div class="share-status hidden" id="shareStatus"></div>
+            
+            <div class="form-group">
+                <label for="uniqueValue">
+                    <i class="fas fa-star"></i> Qu'est-ce qui vous différencie ?
+                </label>
+                <input type="text" id="uniqueValue" 
+                       placeholder="Exemple : Interface simple, prix abordable, IA intégrée...">
+            </div>
+            
+            <button id="generateBtn" class="btn-primary">
+                <i class="fas fa-magic"></i> Générer mon pitch
+            </button>
+            
+            <div class="result-container hidden" id="resultContainer">
+                <h2><i class="fas fa-trophy"></i> Votre Pitch Business</h2>
+                <div class="pitch-result" id="pitchResult"></div>
+                <div class="action-buttons">
+                    <button id="copyBtn" class="btn-secondary">
+                        <i class="far fa-copy"></i> Copier
+                    </button>
+                    <button id="regenerateBtn" class="btn-secondary">
+                        <i class="fas fa-redo"></i> Régénérer
+                    </button>
+                </div>
             </div>
         </div>
     </div>
 
-    <script src="/frontend/script.js"></script>
+    <div class="loading-overlay hidden" id="loadingOverlay">
+        <div class="loading-spinner">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>Génération de votre pitch en cours...</p>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
 </body>
 </html>

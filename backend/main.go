@@ -1,14 +1,12 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
-	"sync"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -23,134 +21,81 @@ type ProjectDetails struct {
 	BusinessModel string `json:"businessModel"`
 }
 
-type Pitch struct {
-	ID        string    `json:"id"`
-	Content   string    `json:"content"`
-	CreatedAt time.Time `json:"createdAt"`
-}
-
-type AIPrompt struct {
-	Model       string  `json:"model"`
-	Prompt      string  `json:"prompt"`
-	MaxTokens   int     `json:"max_tokens"`
-	Temperature float32 `json:"temperature"`
-}
-
-type AIResponse struct {
-	Choices []struct {
-		Text string `json:"text"`
-	} `json:"choices"`
-}
-
 // Variables globales
-var (
-	examplePitches = []string{
-		"Problème: Les petits commerçants ont du mal à gérer leur inventaire\nSolution: Une app mobile de gestion d'inventaire simplifiée\nClient cible: Petits commerçants indépendants\nValeur: Gain de temps et réduction des erreurs\nCanaux: Boutique en ligne, réseaux sociaux",
-		"Problème: Manque de solutions de livraison rapide en zone rurale\nSolution: Réseau de livreurs locaux à vélo\nClient cible: Commerces ruraux et habitants\nValeur: Livraison en moins de 2h à prix abordable\nCanaux: Partenariats avec commerces, site web",
-	}
-
-	// Système de stockage
-	pitches   = make(map[string]Pitch)
-	pitchesMu sync.Mutex
-)
-
-// Fonctions de stockage
-func initStorage() {
-	// Charger les données existantes si nécessaire
-	data, err := os.ReadFile("pitches.json")
-	if err == nil {
-		json.Unmarshal(data, &pitches)
-	}
+var examplePitches = []string{
+	"Problème: Les petits commerçants ont du mal à gérer leur inventaire\nSolution: Une app mobile de gestion d'inventaire simplifiée\nClient cible: Petits commerçants indépendants\nValeur: Gain de temps et réduction des erreurs\nCanaux: Boutique en ligne, réseaux sociaux",
+	"Problème: Manque de solutions de livraison rapide en zone rurale\nSolution: Réseau de livreurs locaux à vélo\nClient cible: Commerces ruraux et habitants\nValeur: Livraison en moins de 2h à prix abordable\nCanaux: Partenariats avec commerces, site web",
 }
 
-func savePitch(pitch Pitch) error {
-	pitchesMu.Lock()
-	defer pitchesMu.Unlock()
-
-	pitches[pitch.ID] = pitch
-
-	data, err := json.MarshalIndent(pitches, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile("pitches.json", data, 0644)
-}
-
-// Fonction principale de génération de pitch
+// Fonction de génération de pitch (version simplifiée sans API externe)
 func generatePitch(details ProjectDetails) (string, error) {
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" {
-		return "", fmt.Errorf("OPENAI_API_KEY not set")
+	// Template de pitch basé sur la méthode Lean Canvas
+	pitch := fmt.Sprintf(`**PITCH BUSINESS - %s**
+
+🎯 **PROBLÈME IDENTIFIÉ**
+Le marché cible (%s) fait face à des défis significatifs que notre solution peut résoudre de manière efficace.
+
+💡 **SOLUTION PROPOSÉE**
+%s
+
+Notre approche unique: %s
+
+👥 **CLIENT CIBLE**
+Marché cible: %s
+Segmentation claire avec des besoins spécifiques identifiés.
+
+💰 **PROPOSITION DE VALEUR**
+- Résolution directe du problème identifié
+- Avantage compétitif face aux concurrents: %s
+- Valeur ajoutée mesurable pour les clients
+
+📈 **CANAUX DE DISTRIBUTION**
+- Marketing digital ciblé
+- Partenariats stratégiques
+- Vente directe et en ligne
+
+🏆 **AVANTAGE COMPÉTITIF**
+%s
+
+💵 **MODÈLE ÉCONOMIQUE**
+%s
+
+**Prêt à transformer cette vision en réalité !**`,
+		details.Idea,
+		getValueOrDefault(details.TargetMarket, "Marché cible à définir"),
+		details.Idea,
+		getValueOrDefault(details.UniqueAspect, "Innovation et approche différenciée"),
+		getValueOrDefault(details.TargetMarket, "Segments de marché stratégiques"),
+		getValueOrDefault(details.Competitors, "Concurrence traditionnelle"),
+		getValueOrDefault(details.UniqueAspect, "Innovation et positionnement unique"),
+		getValueOrDefault(details.BusinessModel, "Modèle de revenus à développer"))
+
+	return pitch, nil
+}
+
+// Fonction utilitaire pour gérer les valeurs vides
+func getValueOrDefault(value, defaultValue string) string {
+	if strings.TrimSpace(value) == "" {
+		return defaultValue
 	}
+	return value
+}
 
-	prompt := fmt.Sprintf(`En utilisant la méthode Lean Canvas, génère un pitch clair et persuasif pour cette idée de projet. 
-
-Idée principale: "%s"
-Marché cible: "%s"
-Concurrents principaux: "%s"
-Aspect unique: "%s"
-Modèle économique: "%s"
-
-Structure le pitch avec ces sections:
-1. Problème identifié (détaillé)
-2. Solution proposée (précise)
-3. Client cible (segmenté)
-4. Proposition de valeur (convaincante)
-5. Canaux de distribution
-6. Avantage compétitif
-7. Modèle économique
-
-Le pitch doit être professionnel, concis et adapté à des investisseurs.`,
-		details.Idea, details.TargetMarket, details.Competitors, details.UniqueAspect, details.BusinessModel)
-
-	aiPrompt := AIPrompt{
-		Model:       "text-davinci-003",
-		Prompt:      prompt,
-		MaxTokens:   700,
-		Temperature: 0.7,
-	}
-
-	requestBody, err := json.Marshal(aiPrompt)
-	if err != nil {
-		return "", err
-	}
-
-	req, err := http.NewRequest("POST", "https://api.openai.com/v1/completions", bytes.NewBuffer(requestBody))
-	if err != nil {
-		return "", err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	var aiResp AIResponse
-	err = json.Unmarshal(body, &aiResp)
-	if err != nil {
-		return "", err
-	}
-
-	if len(aiResp.Choices) == 0 {
-		return "", fmt.Errorf("no response from AI")
-	}
-
-	return aiResp.Choices[0].Text, nil
+// Middleware CORS
+func enableCORS(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 }
 
 // Handlers HTTP
 func pitchHandler(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+
+	if r.Method == http.MethodOptions {
+		return
+	}
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -159,13 +104,19 @@ func pitchHandler(w http.ResponseWriter, r *http.Request) {
 	var details ProjectDetails
 	err := json.NewDecoder(r.Body).Decode(&details)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Validation basique
+	if strings.TrimSpace(details.Idea) == "" {
+		http.Error(w, "L'idée principale est requise", http.StatusBadRequest)
 		return
 	}
 
 	pitch, err := generatePitch(details)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Erreur lors de la génération: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -174,20 +125,28 @@ func pitchHandler(w http.ResponseWriter, r *http.Request) {
 		Content:   pitch,
 		CreatedAt: time.Now(),
 	}
+
 	err = savePitch(newPitch)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		log.Printf("Erreur lors de la sauvegarde: %v", err)
+		// Continue même si la sauvegarde échoue
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	response := map[string]string{
 		"pitch": pitch,
 		"id":    newPitch.ID,
-	})
+	}
+	json.NewEncoder(w).Encode(response)
 }
 
 func examplesHandler(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+
+	if r.Method == http.MethodOptions {
+		return
+	}
+
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -198,6 +157,12 @@ func examplesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func shareHandler(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+
+	if r.Method == http.MethodOptions {
+		return
+	}
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -209,35 +174,67 @@ func shareHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	err := json.NewDecoder(r.Body).Decode(&data)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
+	// Validation de l'email basique
+	if !strings.Contains(data.Email, "@") {
+		http.Error(w, "Adresse email invalide", http.StatusBadRequest)
+		return
+	}
+
+	// Simuler l'envoi d'email (remplacer par vraie logique d'envoi)
+	log.Printf("Partage du pitch vers: %s", data.Email)
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	response := map[string]string{
 		"status":  "success",
-		"message": "Pitch partagé avec succès",
-	})
+		"message": "Pitch partagé avec succès vers " + data.Email,
+	}
+	json.NewEncoder(w).Encode(response)
+}
+
+// Handler pour servir les fichiers statiques
+func staticHandler(w http.ResponseWriter, r *http.Request) {
+	// Rediriger la racine vers index.html
+	if r.URL.Path == "/" {
+		r.URL.Path = "/index.html"
+	}
+
+	// Servir les fichiers depuis le dossier frontend
+	http.ServeFile(w, r, "./frontend"+r.URL.Path)
 }
 
 // Fonction principale
 func main() {
-	// Chargement des variables d'environnement
+	// Chargement des variables d'environnement (optionnel)
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		log.Println("Fichier .env non trouvé, utilisation des variables d'environnement système")
 	}
 
 	// Initialisation du stockage
-	initStorage()
+	err = initStorage()
+	if err != nil {
+		log.Printf("Erreur lors de l'initialisation du stockage: %v", err)
+	}
 
-	// Configuration des routes
+	// Configuration des routes API
 	http.HandleFunc("/generate-pitch", pitchHandler)
 	http.HandleFunc("/examples", examplesHandler)
 	http.HandleFunc("/share", shareHandler)
-	http.Handle("/", http.FileServer(http.Dir("../frontend")))
+
+	// Route pour les fichiers statiques
+	http.HandleFunc("/", staticHandler)
 
 	// Démarrage du serveur
-	log.Println("Server running on port 8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	log.Printf("Server running on port %s", port)
+	log.Printf("Accédez à l'application sur: http://localhost:%s", port)
+	log.Fatal(http.ListenAndServe(":"+port, nil))
 }

@@ -1,222 +1,164 @@
-document.addEventListener('DOMContentLoaded', function() {
-    // Éléments du DOM
-    const tabBtns = document.querySelectorAll('.tab-btn');
-    const tabContents = document.querySelectorAll('.tab-content');
-    const generateBtn = document.getElementById('generateBtn');
-    const projectIdea = document.getElementById('projectIdea');
-    const targetMarket = document.getElementById('targetMarket');
-    const competitors = document.getElementById('competitors');
-    const uniqueAspect = document.getElementById('uniqueAspect');
-    const businessModel = document.getElementById('businessModel');
-    const resultContainer = document.getElementById('resultContainer');
-    const pitchResult = document.getElementById('pitchResult');
-    const copyBtn = document.getElementById('copyBtn');
-    const saveBtn = document.getElementById('saveBtn');
-    const shareBtn = document.getElementById('shareBtn');
-    const examplesList = document.getElementById('examplesList');
-    const savedList = document.getElementById('savedList');
-    const shareModal = document.getElementById('shareModal');
-    const closeBtn = document.querySelector('.close-btn');
-    const shareEmail = document.getElementById('shareEmail');
-    const confirmShareBtn = document.getElementById('confirmShareBtn');
-    const shareStatus = document.getElementById('shareStatus');
-
-    let currentPitchId = null;
-
-    // Gestion des onglets
-    tabBtns.forEach(btn => {
-        btn.addEventListener('click', function() {
-            const tabId = this.getAttribute('data-tab');
-            
-            // Mettre à jour les boutons d'onglet
-            tabBtns.forEach(b => b.classList.remove('active'));
-            this.classList.add('active');
-            
-            // Mettre à jour le contenu des onglets
-            tabContents.forEach(content => content.classList.remove('active'));
-            document.getElementById(tabId).classList.add('active');
-            
-            // Charger les données si nécessaire
-            if (tabId === 'examples') {
-                loadExamples();
-            } else if (tabId === 'saved') {
-                loadSavedPitches();
+class PitchGenerator {
+            constructor() {
+                this.initializeElements();
+                this.attachEventListeners();
             }
-        });
-    });
 
-    // Charger les exemples
-    function loadExamples() {
-        fetch('/examples')
-            .then(response => response.json())
-            .then(examples => {
-                examplesList.innerHTML = examples.map((example, index) => `
-                    <div class="example-card">
-                        <h3>Exemple ${index + 1}</h3>
-                        <div class="example-content">${example.replace(/\n/g, '<br>')}</div>
-                        <button class="use-example-btn" data-example="${index}">Utiliser cet exemple</button>
-                    </div>
-                `).join('');
+            initializeElements() {
+                this.generateBtn = document.getElementById('generateBtn');
+                this.projectIdea = document.getElementById('projectIdea');
+                this.targetMarket = document.getElementById('targetMarket');
+                this.uniqueValue = document.getElementById('uniqueValue');
+                this.resultContainer = document.getElementById('resultContainer');
+                this.pitchResult = document.getElementById('pitchResult');
+                this.copyBtn = document.getElementById('copyBtn');
+                this.regenerateBtn = document.getElementById('regenerateBtn');
+                this.loadingOverlay = document.getElementById('loadingOverlay');
+            }
+
+            attachEventListeners() {
+                this.generateBtn.addEventListener('click', () => this.generatePitch());
+                this.copyBtn.addEventListener('click', () => this.copyPitch());
+                this.regenerateBtn.addEventListener('click', () => this.generatePitch());
                 
-                // Ajouter les événements aux boutons
-                document.querySelectorAll('.use-example-btn').forEach(btn => {
-                    btn.addEventListener('click', function() {
-                        const index = this.getAttribute('data-example');
-                        projectIdea.value = examples[index].split('\n')[0].replace('Problème: ', '');
-                        document.querySelector('.tab-btn[data-tab="generator"]').click();
-                    });
-                });
-            })
-            .catch(error => console.error('Error loading examples:', error));
-    }
-
-    // Charger les pitchs sauvegardés
-    function loadSavedPitches() {
-        // Dans une vraie application, vous feriez une requête au backend
-        // Pour cet exemple, nous affichons simplement un message
-        savedList.innerHTML = '<p>Connectez-vous pour voir vos pitchs sauvegardés</p>';
-    }
-
-    // Générer un pitch
-    generateBtn.addEventListener('click', async function() {
-        const idea = projectIdea.value.trim();
-        
-        if (!idea) {
-            alert('Veuillez entrer une idée de projet');
-            return;
-        }
-        
-        generateBtn.disabled = true;
-        generateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Génération en cours...';
-        
-        const projectDetails = {
-            idea: idea,
-            targetMarket: targetMarket.value.trim(),
-            competitors: competitors.value.trim(),
-            uniqueAspect: uniqueAspect.value.trim(),
-            businessModel: businessModel.value.trim()
-        };
-        
-        try {
-            const response = await fetch('/generate-pitch', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(projectDetails)
-            });
-            
-            if (!response.ok) {
-                throw new Error('Erreur lors de la génération du pitch');
+                // Validation en temps réel
+                this.projectIdea.addEventListener('input', () => this.validateForm());
             }
-            
-            const data = await response.json();
-            pitchResult.innerHTML = data.pitch.replace(/\n/g, '<br>');
-            resultContainer.classList.remove('hidden');
-            currentPitchId = data.id;
-            
-            // Faire défiler jusqu'au résultat
-            resultContainer.scrollIntoView({ behavior: 'smooth' });
-            
-        } catch (error) {
-            console.error('Error:', error);
-            alert('Une erreur est survenue. Veuillez réessayer.');
-        } finally {
-            generateBtn.disabled = false;
-            generateBtn.innerHTML = '<i class="fas fa-magic"></i> Générer le pitch';
+
+            validateForm() {
+                const isValid = this.projectIdea.value.trim().length > 10;
+                this.generateBtn.disabled = !isValid;
+            }
+
+            async generatePitch() {
+                const idea = this.projectIdea.value.trim();
+                
+                if (!idea || idea.length < 10) {
+                    this.showError('Veuillez décrire votre idée plus en détail (minimum 10 caractères)');
+                    return;
+                }
+
+                try {
+                    this.setLoading(true);
+                    const pitch = await this.createPitch({
+                        idea: idea,
+                        targetMarket: this.targetMarket.value.trim(),
+                        uniqueValue: this.uniqueValue.value.trim()
+                    });
+                    
+                    this.displayPitch(pitch);
+                    this.showSuccess('Pitch généré avec succès !');
+                } catch (error) {
+                    this.showError('Une erreur est survenue. Veuillez réessayer.');
+                    console.error('Erreur:', error);
+                } finally {
+                    this.setLoading(false);
+                }
+            }
+
+            async createPitch(data) {
+                // Simulation d'un appel API avec génération de pitch local
+                return new Promise((resolve) => {
+                    setTimeout(() => {
+                        const pitch = this.generatePitchText(data);
+                        resolve(pitch);
+                    }, 2000);
+                });
+            }
+
+            generatePitchText(data) {
+                const { idea, targetMarket, uniqueValue } = data;
+                
+                const templates = [
+                    `🎯 **LE PROBLÈME**
+${idea.split('.')[0] || idea}
+
+👥 **NOTRE CIBLE**
+${targetMarket || 'Entrepreneurs et professionnels'} qui cherchent une solution efficace et accessible.
+
+💡 **NOTRE SOLUTION**
+Nous proposons une approche innovante qui résout ce problème de manière simple et efficace.
+
+⭐ **NOTRE AVANTAGE**
+${uniqueValue || 'Une solution intuitive et abordable'} qui nous différencie de la concurrence.
+
+🚀 **L'OPPORTUNITÉ**
+Le marché est prêt pour une solution comme la nôtre. C'est le moment idéal pour agir.
+
+💰 **LE POTENTIEL**
+Avec notre approche, nous visons une croissance rapide et durable sur ce marché en expansion.`,
+
+                    `🔍 **LE DÉFI**
+${idea}
+
+🎯 **NOTRE MISSION**
+Aider ${targetMarket || 'nos clients'} à surmonter ce défi grâce à notre solution innovante.
+
+✨ **CE QUI NOUS REND UNIQUES**
+${uniqueValue || 'Notre approche unique'} nous permet de nous démarquer et d'offrir une valeur exceptionnelle.
+
+📈 **L'IMPACT**
+Notre solution transforme la façon dont nos clients abordent ce problème, avec des résultats mesurables.
+
+🌟 **LA VISION**
+Nous construisons l'avenir de ce secteur, un client satisfait à la fois.`
+                ];
+
+                return templates[Math.floor(Math.random() * templates.length)];
+            }
+
+            displayPitch(pitch) {
+                this.pitchResult.textContent = pitch;
+                this.resultContainer.classList.remove('hidden');
+                this.resultContainer.scrollIntoView({ behavior: 'smooth' });
+            }
+
+            async copyPitch() {
+                try {
+                    await navigator.clipboard.writeText(this.pitchResult.textContent);
+                    this.copyBtn.innerHTML = '<i class="fas fa-check"></i> Copié !';
+                    setTimeout(() => {
+                        this.copyBtn.innerHTML = '<i class="far fa-copy"></i> Copier';
+                    }, 2000);
+                } catch (error) {
+                    this.showError('Impossible de copier. Sélectionnez le texte manuellement.');
+                }
+            }
+
+            setLoading(isLoading) {
+                if (isLoading) {
+                    this.loadingOverlay.classList.remove('hidden');
+                    this.generateBtn.disabled = true;
+                } else {
+                    this.loadingOverlay.classList.add('hidden');
+                    this.generateBtn.disabled = false;
+                }
+            }
+
+            showError(message) {
+                this.removeMessages();
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error-message';
+                errorDiv.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${message}`;
+                this.generateBtn.parentNode.appendChild(errorDiv);
+                setTimeout(() => errorDiv.remove(), 5000);
+            }
+
+            showSuccess(message) {
+                this.removeMessages();
+                const successDiv = document.createElement('div');
+                successDiv.className = 'success-message';
+                successDiv.innerHTML = `<i class="fas fa-check-circle"></i> ${message}`;
+                this.resultContainer.appendChild(successDiv);
+                setTimeout(() => successDiv.remove(), 3000);
+            }
+
+            removeMessages() {
+                document.querySelectorAll('.error-message, .success-message').forEach(el => el.remove());
+            }
         }
-    });
-    
-    // Copier le pitch
-    copyBtn.addEventListener('click', function() {
-        const text = pitchResult.textContent;
-        navigator.clipboard.writeText(text)
-            .then(() => {
-                copyBtn.innerHTML = '<i class="fas fa-check"></i> Copié!';
-                setTimeout(() => {
-                    copyBtn.innerHTML = '<i class="far fa-copy"></i> Copier';
-                }, 2000);
-            })
-            .catch(err => {
-                console.error('Erreur lors de la copie:', err);
-            });
-    });
-    
-    // Sauvegarder le pitch
-    saveBtn.addEventListener('click', function() {
-        if (!currentPitchId) {
-            alert('Générez d\'abord un pitch avant de sauvegarder');
-            return;
-        }
-        
-        // Dans une vraie application, vous feriez une requête au backend
-        // pour confirmer la sauvegarde
-        saveBtn.innerHTML = '<i class="fas fa-check"></i> Sauvegardé!';
-        setTimeout(() => {
-            saveBtn.innerHTML = '<i class="far fa-save"></i> Sauvegarder';
-        }, 2000);
-    });
-    
-    // Partager le pitch
-    shareBtn.addEventListener('click', function() {
-        if (!currentPitchId) {
-            alert('Générez d\'abord un pitch avant de partager');
-            return;
-        }
-        
-        shareModal.classList.remove('hidden');
-        shareEmail.value = '';
-        shareStatus.classList.add('hidden');
-    });
-    
-    // Fermer le modal
-    closeBtn.addEventListener('click', function() {
-        shareModal.classList.add('hidden');
-    });
-    
-    // Confirmer le partage
-    confirmShareBtn.addEventListener('click', function() {
-        const email = shareEmail.value.trim();
-        
-        if (!email || !email.includes('@')) {
-            alert('Veuillez entrer une adresse email valide');
-            return;
-        }
-        
-        confirmShareBtn.disabled = true;
-        confirmShareBtn.textContent = 'Envoi en cours...';
-        
-        fetch('/share', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                pitch: pitchResult.textContent,
-                email: email
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            shareStatus.textContent = data.message;
-            shareStatus.classList.remove('hidden');
-            shareStatus.classList.add('success');
-            
-            setTimeout(() => {
-                shareModal.classList.add('hidden');
-                confirmShareBtn.disabled = false;
-                confirmShareBtn.textContent = 'Envoyer';
-            }, 2000);
-        })
-        .catch(error => {
-            shareStatus.textContent = 'Erreur lors du partage';
-            shareStatus.classList.remove('hidden');
-            shareStatus.classList.add('error');
-            confirmShareBtn.disabled = false;
-            confirmShareBtn.textContent = 'Envoyer';
+
+        // Initialisation de l'application
+        document.addEventListener('DOMContentLoaded', () => {
+            new PitchGenerator();
         });
-    });
-    
-    // Initialiser l'application
-    loadExamples();
-});
