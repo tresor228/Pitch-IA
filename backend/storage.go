@@ -63,29 +63,29 @@ func saveToFile() error {
 	return os.WriteFile(storageFile, data, 0644)
 }
 
-func getPitch(id string) (Pitch, bool) {
-	pitchesMu.RLock()
-	defer pitchesMu.RUnlock()
-	pitch, exists := pitches[id]
-	return pitch, exists
-}
+//func getPitch(id string) (Pitch, bool) {
+//	pitchesMu.RLock()
+//	defer pitchesMu.RUnlock()
+//	pitch, exists := pitches[id]
+//	return pitch, exists
+//}
 
-func getAllPitches() map[string]Pitch {
-	pitchesMu.RLock()
-	defer pitchesMu.RUnlock()
-	result := make(map[string]Pitch)
-	for k, v := range pitches {
-		result[k] = v
-	}
-	return result
-}
+//func getAllPitches() map[string]Pitch {
+//	pitchesMu.RLock()
+//	defer pitchesMu.RUnlock()
+//	result := make(map[string]Pitch)
+//	for k, v := range pitches {
+//		result[k] = v
+//	}
+//	return result
+//}
 
-func deletePitch(id string) error {
-	pitchesMu.Lock()
-	defer pitchesMu.Unlock()
-	if _, exists := pitches[id]; !exists {
-		return fmt.Errorf("pitch non trouvé")
-	}
-	delete(pitches, id)
-	return saveToFile()
-}
+//func deletePitch(id string) error {
+//	pitchesMu.Lock()
+//	defer pitchesMu.Unlock()
+//	if _, exists := pitches[id]; !exists {
+//		return fmt.Errorf("pitch non trouvé")
+//	}
+//	delete(pitches, id)
+//	return saveToFile()
+//}
