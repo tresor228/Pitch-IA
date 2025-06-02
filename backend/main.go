@@ -204,21 +204,21 @@ func examplesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	// Chargement du .env
 	err := godotenv.Load("../.env")
 	if err != nil {
 		log.Println("Fichier .env non trouvé, utilisation des variables système")
 	}
 
-	http.HandleFunc("/generate-pitch", pitchHandler)
-	http.HandleFunc("/examples", examplesHandler)
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" {
-			http.ServeFile(w, r, "../frontend/index.htm")
-		} else {
-			http.ServeFile(w, r, "../frontend"+r.URL.Path)
-		}
-	})
+	// Configuration des routes
+	http.HandleFunc("/api/generate-pitch", pitchHandler)
+	http.HandleFunc("/api/examples", examplesHandler)
 
+	// Serveur de fichiers statiques
+	fs := http.FileServer(http.Dir("../frontend"))
+	http.Handle("/", fs)
+
+	// Configuration du port
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
