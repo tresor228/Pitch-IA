@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "backend/main.go",
+      "use": "@vercel/go",
+      "config": { "distDir": "../frontend" }
+    }
+  ]
+}
