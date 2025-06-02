@@ -46,7 +46,7 @@ class PitchGenerator {
             this.displayPitch(pitchData);
             this.showSuccess('Pitch généré avec succès !');
         } catch (error) {
-            this.showError('Erreur: ' + error.message);
+            this.showError(error.message || 'Erreur lors de la génération du pitch');
             console.error(error);
         } finally {
             this.setLoading(false);
@@ -63,15 +63,22 @@ class PitchGenerator {
         });
         
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Erreur serveur');
+            const errorData = await response.json().catch(() => ({}));
+            let errorMessage = errorData.error || 'Erreur serveur';
+            
+            if (response.status === 429 || errorMessage.includes('quota')) {
+                errorMessage = "Limite de requêtes atteinte. Veuillez réessayer plus tard.";
+            } else if (response.status === 503) {
+                errorMessage = "Service temporairement indisponible";
+            }
+            
+            throw new Error(errorMessage);
         }
         
         return await response.json();
     }
 
     displayPitch(pitchData) {
-        // Reset all fields
         this.problemResult.textContent = '';
         this.solutionResult.textContent = '';
         this.marketResult.textContent = '';
@@ -79,35 +86,44 @@ class PitchGenerator {
         this.channelsResult.textContent = '';
         this.businessModelResult.textContent = '';
         
-        // Try to extract sections if they exist
-        if (pitchData.problem) {
-            this.problemResult.textContent = pitchData.problem;
-        }
-        if (pitchData.solution) {
-            this.solutionResult.textContent = pitchData.solution;
-        }
-        if (pitchData.targetMarket) {
-            this.marketResult.textContent = pitchData.targetMarket;
-        }
-        if (pitchData.valueProposition) {
-            this.valueResult.textContent = pitchData.valueProposition;
-        }
-        if (pitchData.channels) {
-            this.channelsResult.textContent = pitchData.channels;
-        }
-        if (pitchData.businessModel) {
-            this.businessModelResult.textContent = pitchData.businessModel;
-        }
-        
-        // Display full pitch with formatting
         if (pitchData.pitch) {
             this.pitchResult.innerHTML = this.formatPitchContent(pitchData.pitch);
+            
+            // Extraction des sections si elles existent
+            const sections = this.extractSections(pitchData.pitch);
+            if (sections.problem) this.problemResult.textContent = sections.problem;
+            if (sections.solution) this.solutionResult.textContent = sections.solution;
+            if (sections.market) this.marketResult.textContent = sections.market;
+            if (sections.value) this.valueResult.textContent = sections.value;
+            if (sections.channels) this.channelsResult.textContent = sections.channels;
+            if (sections.model) this.businessModelResult.textContent = sections.model;
         } else {
             this.pitchResult.textContent = "Aucun pitch généré";
         }
         
         this.resultContainer.classList.remove('hidden');
         this.resultContainer.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    extractSections(content) {
+        const sections = {};
+        const regex = /(\d+\.\s*\[(.*?)\]\s*)(.*?)(?=\n\d+\.|$)/g;
+        let match;
+        
+        while ((match = regex.exec(content)) !== null) {
+            if (match[2] && match[3]) {
+                sections[match[2].toLowerCase()] = match[3].trim();
+            }
+        }
+        
+        return {
+            problem: sections['problème'] || '',
+            solution: sections['solution'] || '',
+            market: sections['marché'] || '',
+            value: sections['valeur'] || '',
+            channels: sections['canaux'] || '',
+            model: sections['modèle'] || ''
+        };
     }
 
     formatPitchContent(content) {
