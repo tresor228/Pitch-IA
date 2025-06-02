@@ -204,7 +204,7 @@ func examplesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	err := godotenv.Load("../.env")
+	err := godotenv.Load(".env")
 	if err != nil {
 		log.Println("Fichier .env non trouvé, utilisation des variables système")
 	}
@@ -213,9 +213,9 @@ func main() {
 	http.HandleFunc("/examples", examplesHandler)
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
-			http.ServeFile(w, r, "../frontend/index.htm")
+			http.ServeFile(w, r, "frontend/index.htm")
 		} else {
-			http.ServeFile(w, r, "../frontend"+r.URL.Path)
+			http.ServeFile(w, r, "frontend"+r.URL.Path)
 		}
 	})
 
