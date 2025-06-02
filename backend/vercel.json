@@ -2,14 +2,27 @@
   "version": 2,
   "builds": [
     {
-      "src": "main.go",
+      "src": "backend/main.go",
       "use": "@vercel/go"
+    },
+    {
+      "src": "frontend/**",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
     {
+      "src": "/",
+      "dest": "/frontend/index.htm"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "/backend/main.go"
+    },
+    {
       "src": "/(.*)",
-      "dest": "/main.go"
+      "status": 404,
+      "dest": "/frontend/index.htm"
     }
   ]
 }
