@@ -9,47 +9,56 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/joho/godotenv"
 	openai "github.com/sashabaranov/go-openai"
 )
 
 type ProjectDetails struct {
-	Idea          string `json:"idea"`
-	TargetMarket  string `json:"targetMarket"`
-	UniqueAspect  string `json:"uniqueAspect"`
-	BusinessModel string `json:"businessModel"`
+	Idea          string
+	TargetMarket  string
+	UniqueAspect  string
+	BusinessModel string
 }
 
 type GeneratedPitch struct {
-	Problem          string `json:"problem"`
-	Solution         string `json:"solution"`
-	TargetMarket     string `json:"targetMarket"`
-	ValueProposition string `json:"valueProposition"`
-	Channels         string `json:"channels"`
-	BusinessModel    string `json:"businessModel"`
-	FullPitch        string `json:"fullPitch"`
+	Problem          string
+	Solution         string
+	TargetMarket     string
+	ValueProposition string
+	Channels         string
+	BusinessModel    string
+	FullPitch        string
 }
 
-var examplePitches = []string{
-	"Problème: Les petits commerçants ont du mal à gérer leur inventaire\nSolution: Une app mobile de gestion d'inventaire simplifiée\nClient cible: Petits commerçants indépendants\nValeur: Gain de temps et réduction des erreurs\nCanaux: Boutique en ligne, réseaux sociaux",
-	"Problème: Manque de solutions de livraison rapide en zone rurale\nSolution: Réseau de livreurs locaux à vélo\nClient cible: Commerces ruraux et habitants\nValeur: Livraison en moins de 2h à prix abordable\nCanaux: Partenariats avec commerces, site web",
-}
+var (
+	examplePitches = []string{
+		"Problème: Les petits commerçants ont du mal à gérer leur inventaire\nSolution: Une app mobile de gestion d'inventaire simplifiée\nClient cible: Petits commerçants indépendants\nValeur: Gain de temps et réduction des erreurs\nCanaux: Boutique en ligne, réseaux sociaux",
+		"Problème: Manque de solutions de livraison rapide en zone rurale\nSolution: Réseau de livreurs locaux à vélo\nClient cible: Commerces ruraux et habitants\nValeur: Livraison en moins de 2h à prix abordable\nCanaux: Partenariats avec commerces, site web",
+	}
+
+	pitchCache = make(map[string]GeneratedPitch)
+	cacheMutex sync.RWMutex
+)
 
 func generateWithAI(details ProjectDetails) (GeneratedPitch, error) {
 	client := openai.NewClient(os.Getenv("OPENAI_API_KEY"))
 
-	prompt := fmt.Sprintf(`Tu es un expert en création de pitch business. Crée un pitch UNIQUE basé sur cette idée: "%s"
+	prompt := fmt.Sprintf(`En tant qu'expert en création de startups, génère un pitch business complet et unique pour l'idée suivante :
 
-Structure obligatoire:
-1. [Problème] (50 mots max) - Décris le problème concret
-2. [Solution] (50 mots max) - Solution spécifique proposée
-3. [Marché] (30 mots max) - Détaille le public cible
-4. [Valeur] (30 mots max) - Avantage unique précis
-5. [Canaux] (30 mots max) - Méthodes de distribution concrètes
-6. [Modèle] (30 mots max) - Modèle économique spécifique
+Idée : %s
 
-Évite les généralités. Sois précis et créatif.`, details.Idea)
+Le pitch doit contenir ces sections claires et distinctes :
+
+1. [Problème] Décris le problème spécifique que cette idée résout (50 mots max)
+2. [Solution] Explique en quoi cette solution est innovante (50 mots max)
+3. [Marché] Détaille le public cible précis (âge, profession, besoins) (30 mots max)
+4. [Valeur] Quel est l'avantage compétitif unique ? (30 mots max)
+5. [Canaux] Comment les clients seront-ils atteints ? (30 mots max)
+6. [Modèle] Comment l'argent sera-t-il gagné ? (abonnement, publicité, etc.) (30 mots max)
+
+Sois concret, spécifique et évite les généralités.`, details.Idea)
 
 	resp, err := client.CreateChatCompletion(
 		context.Background(),
@@ -61,7 +70,7 @@ Structure obligatoire:
 					Content: prompt,
 				},
 			},
-			Temperature: 0.9,
+			Temperature: 0.7,
 		},
 	)
 
@@ -69,7 +78,9 @@ Structure obligatoire:
 		return GeneratedPitch{}, fmt.Errorf("erreur OpenAI: %v", err)
 	}
 
-	return parseAIPitchResponse(resp.Choices[0].Message.Content), nil
+	pitch := parseAIPitchResponse(resp.Choices[0].Message.Content)
+	cachePitch(details.Idea, pitch)
+	return pitch, nil
 }
 
 func parseAIPitchResponse(content string) GeneratedPitch {
@@ -84,47 +95,31 @@ func parseAIPitchResponse(content string) GeneratedPitch {
 		"Modèle":   &pitch.BusinessModel,
 	}
 
-	re := regexp.MustCompile(`(\d+\.\s*\[(.*?)\]\s*)(.*?)(?=\n\d+\.|$)`)
+	re := regexp.MustCompile(`(?m)^\d+\.\s*\[(.*?)\]\s*(.*?)(?:\n\d+\.|$)`)
 	matches := re.FindAllStringSubmatch(content, -1)
 
 	for _, match := range matches {
-		if section, ok := sections[match[2]]; ok {
-			*section = strings.TrimSpace(match[3])
+		if len(match) >= 3 {
+			if section, ok := sections[match[1]]; ok {
+				*section = strings.TrimSpace(match[2])
+			}
 		}
 	}
 
 	return pitch
 }
 
-func generateLocalPitch(details ProjectDetails) (string, error) {
-	idea := getValueOrDefault(details.Idea, "votre idée")
-
-	return fmt.Sprintf(`Pitch pour: %s
-
-Problème: Les utilisateurs ont besoin de solutions pour "%s"
-Solution: Approche innovante combinant technologie et méthodologie
-Marché: Public intéressé par %s
-Valeur: Solution %s unique et personnalisable
-Canaux: Plateforme en ligne avec marketing digital
-Modèle: Freemium avec options payantes`,
-		idea, idea, idea, idea), nil
+func getCachedPitch(idea string) (GeneratedPitch, bool) {
+	cacheMutex.RLock()
+	defer cacheMutex.RUnlock()
+	pitch, exists := pitchCache[idea]
+	return pitch, exists
 }
 
-func getValueOrDefault(value, defaultValue string) string {
-	if strings.TrimSpace(value) == "" {
-		return defaultValue
-	}
-	return value
-}
-
-func isGenericPitch(content string) bool {
-	genericTerms := []string{"solution innovante", "marché large", "modèle à définir"}
-	for _, term := range genericTerms {
-		if strings.Contains(content, term) {
-			return true
-		}
-	}
-	return false
+func cachePitch(idea string, pitch GeneratedPitch) {
+	cacheMutex.Lock()
+	defer cacheMutex.Unlock()
+	pitchCache[idea] = pitch
 }
 
 func enableCORS(w *http.ResponseWriter, r *http.Request) bool {
@@ -160,29 +155,29 @@ func pitchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var pitchContent string
-	var pitchErr error
-
-	if os.Getenv("OPENAI_API_KEY") != "" {
-		aiPitch, aiErr := generateWithAI(details)
-		if aiErr == nil && !isGenericPitch(aiPitch.FullPitch) {
-			pitchContent = aiPitch.FullPitch
-		} else {
-			log.Printf("Fallback local: %v", aiErr)
-			pitchContent, pitchErr = generateLocalPitch(details)
-		}
-	} else {
-		pitchContent, pitchErr = generateLocalPitch(details)
+	if cachedPitch, exists := getCachedPitch(details.Idea); exists {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"pitch": cachedPitch.FullPitch,
+		})
+		return
 	}
 
-	if pitchErr != nil {
-		http.Error(w, "Erreur lors de la génération: "+pitchErr.Error(), http.StatusInternalServerError)
+	if os.Getenv("OPENAI_API_KEY") == "" {
+		http.Error(w, "Service OpenAI non configuré", http.StatusServiceUnavailable)
+		return
+	}
+
+	aiPitch, err := generateWithAI(details)
+	if err != nil {
+		log.Printf("Erreur OpenAI: %v", err)
+		http.Error(w, "Erreur lors de la génération du pitch: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
-		"pitch": pitchContent,
+		"pitch": aiPitch.FullPitch,
 	})
 }
 
