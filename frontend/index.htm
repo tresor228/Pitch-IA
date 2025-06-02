@@ -10,49 +10,49 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1><i class="fas fa-rocket"></i> Pitch Business</h1>
-            <p>Transformez votre idée en pitch convaincant</p>
+            <h1><i class="fas fa-rocket"></i> Pitch Business Pro</h1>
+            <p>Transformez votre idée en pitch convaincant avec IA</p>
         </div>
         
         <div class="form-container">
             <div class="form-group">
                 <label for="projectIdea">
-                    <i class="fas fa-lightbulb"></i> Décrivez votre idée de projet *
+                    <i class="fas fa-lightbulb"></i> Votre idée de projet *
                 </label>
                 <textarea id="projectIdea" 
-                          placeholder="Exemple : Une application mobile qui aide les petits commerçants à gérer leurs stocks facilement..." 
+                          placeholder="Décrivez votre idée en 2-3 phrases (minimum 10 caractères)..." 
                           rows="4" required></textarea>
             </div>
             
             <div class="form-group">
                 <label for="targetMarket">
-                    <i class="fas fa-users"></i> Qui sont vos clients cibles ?
+                    <i class="fas fa-users"></i> Marché cible
                 </label>
                 <input type="text" id="targetMarket" 
-                       placeholder="Exemple : Petits commerçants, restaurateurs, entrepreneurs...">
+                       placeholder="Qui sont vos clients idéaux?">
             </div>
             
             <div class="form-group">
                 <label for="uniqueValue">
-                    <i class="fas fa-star"></i> Qu'est-ce qui vous différencie ?
+                    <i class="fas fa-star"></i> Votre avantage unique
                 </label>
                 <input type="text" id="uniqueValue" 
-                       placeholder="Exemple : Interface simple, prix abordable, IA intégrée...">
+                       placeholder="Qu'est-ce qui vous différencie?">
             </div>
             
-            <button id="generateBtn" class="btn-primary">
+            <button id="generateBtn" class="btn-primary" disabled>
                 <i class="fas fa-magic"></i> Générer mon pitch
             </button>
             
             <div class="result-container hidden" id="resultContainer">
-                <h2><i class="fas fa-trophy"></i> Votre Pitch Business</h2>
+                <h2><i class="fas fa-trophy"></i> Votre Pitch Professionnel</h2>
                 <div class="pitch-result" id="pitchResult"></div>
                 <div class="action-buttons">
                     <button id="copyBtn" class="btn-secondary">
                         <i class="far fa-copy"></i> Copier
                     </button>
                     <button id="regenerateBtn" class="btn-secondary">
-                        <i class="fas fa-redo"></i> Régénérer
+                        <i class="fas fa-redo"></i> Améliorer
                     </button>
                 </div>
             </div>
@@ -62,7 +62,7 @@
     <div class="loading-overlay hidden" id="loadingOverlay">
         <div class="loading-spinner">
             <i class="fas fa-spinner fa-spin"></i>
-            <p>Génération de votre pitch en cours...</p>
+            <p>L'IA travaille sur votre pitch...</p>
         </div>
     </div>
 
