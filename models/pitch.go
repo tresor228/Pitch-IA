@@ -1,8 +1,8 @@
 package models
 
 type ProjectDetails struct {
-	Idea          string
-	TargetMarket  string
+	Idee          string
+	Marche_cible  string
 	UniqueAspect  string
 	BusinessModel string
 }
@@ -10,7 +10,7 @@ type ProjectDetails struct {
 type GeneratedPitch struct {
 	Problem          string
 	Solution         string
-	TargetMarket     string
+	Marche_cible     string
 	ValueProposition string
 	Channels         string
 	BusinessModel    string
