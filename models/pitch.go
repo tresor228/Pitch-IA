@@ -1,18 +1,19 @@
 package models
 
-type ProjectDetails struct {
-	Idee          string
-	Marche_cible  string
-	UniqueAspect  string
-	BusinessModel string
+// Struct pour la réponse de l'API
+type PitchResponse struct {
+	Probleme string
+	Solution string
+	Marche   string
+	Valeur   string
+	Canaux   string
+	Modele   string
 }
 
-type GeneratedPitch struct {
-	Problem          string
-	Solution         string
-	Marche_cible     string
-	ValueProposition string
-	Channels         string
-	BusinessModel    string
-	FullPitch        string
+// Struct pour le template
+type TemplateData struct {
+	UserInput string
+	Response  *PitchResponse
+	Loading   bool
+	Error     string
 }

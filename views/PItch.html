@@ -3,40 +3,172 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Générateur de Pitch Business IA</title>
+    <title>Assistant Pitch IA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1><i class="fas fa-robot"></i> Générateur de Pitch IA</h1>
-            <p>Décrivez votre idée et l'IA créera un pitch complet</p>
-        </div>
-        
-        <div class="form-container">
-            <div class="form-group">
-                <label for="projectIdea">
-                    <i class="fas fa-lightbulb"></i> Votre idée de projet
-                </label>
-                <textarea id="projectIdea" 
-                          placeholder="Ex: Une application pour connecter les artisans locaux avec des clients..." 
-                          rows="4" required></textarea>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-4xl">
+        <!-- Formulaire principal -->
+        <div class="bg-white rounded-2xl shadow-xl p-6 md:p-8 mb-6">
+            <div class="text-center mb-2">
+                <h1 class="text-2xl md:text-3xl font-bold text-gray-800">Générateur de Pitch IA</h1>
+                <p class="text-gray-600 mt-2">Obtenez une structure de pitch professionnelle en quelques secondes</p>
             </div>
             
-            <button id="generateBtn" class="btn-primary" disabled>
-                <i class="fas fa-magic"></i> Générer le pitch complet
-            </button>
+            <div class="mb-6 mt-8">
+                <h2 class="text-xl font-medium text-gray-800">Décrivez votre projet</h2>
+            </div>
             
-           
+            <form action="/analyze-pitch" method="POST" class="mb-4">
+                <div class="flex items-center bg-gray-50 rounded-xl border border-gray-200 px-4 py-3 shadow-sm">
+                    <input 
+                        type="text" 
+                        name="project_description"
+                        placeholder="Ex: Application de livraison de repas healthy pour étudiants..." 
+                        class="flex-1 bg-transparent outline-none text-gray-700 placeholder-gray-500 text-lg"
+                        required
+                        value="{{.UserInput}}"
+                    >
+                    
+                    <button type="submit" class="ml-2 bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-xl transition-all duration-300">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </form>
         </div>
+
+        <!-- Affichage des résultats structurés -->
+        {{if .Response}}
+        <div class="bg-white rounded-2xl shadow-xl p-6 md:p-8">
+            <div class="text-center mb-8">
+                <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-chart-line text-green-600 text-2xl"></i>
+                </div>
+                <h1 class="text-2xl md:text-3xl font-bold text-gray-800">Votre Pitch Structuré</h1>
+                <p class="text-gray-600 mt-2">Basé sur votre description : "{{.UserInput}}"</p>
+            </div>
+
+            <!-- Grille des sections du pitch -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Problème -->
+                <div class="bg-red-50 p-6 rounded-xl border-l-4 border-red-500">
+                    <div class="flex items-center mb-3">
+                        <div class="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center mr-3">
+                            <i class="fas fa-exclamation-circle text-red-600"></i>
+                        </div>
+                        <h3 class="font-bold text-lg text-gray-800">Problème</h3>
+                    </div>
+                    <p class="text-gray-700 text-sm leading-relaxed">
+                        {{.Response.Probleme}}
+                    </p>
+                </div>
+
+                <!-- Solution -->
+                <div class="bg-green-50 p-6 rounded-xl border-l-4 border-green-500">
+                    <div class="flex items-center mb-3">
+                        <div class="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center mr-3">
+                            <i class="fas fa-lightbulb text-green-600"></i>
+                        </div>
+                        <h3 class="font-bold text-lg text-gray-800">Solution</h3>
+                    </div>
+                    <p class="text-gray-700 text-sm leading-relaxed">
+                        {{.Response.Solution}}
+                    </p>
+                </div>
+
+                <!-- Marché -->
+                <div class="bg-blue-50 p-6 rounded-xl border-l-4 border-blue-500">
+                    <div class="flex items-center mb-3">
+                        <div class="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
+                            <i class="fas fa-users text-blue-600"></i>
+                        </div>
+                        <h3 class="font-bold text-lg text-gray-800">Marché</h3>
+                    </div>
+                    <p class="text-gray-700 text-sm leading-relaxed">
+                        {{.Response.Marche}}
+                    </p>
+                </div>
+
+                <!-- Valeur -->
+                <div class="bg-purple-50 p-6 rounded-xl border-l-4 border-purple-500">
+                    <div class="flex items-center mb-3">
+                        <div class="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center mr-3">
+                            <i class="fas fa-star text-purple-600"></i>
+                        </div>
+                        <h3 class="font-bold text-lg text-gray-800">Valeur Unique</h3>
+                    </div>
+                    <p class="text-gray-700 text-sm leading-relaxed">
+                        {{.Response.Valeur}}
+                    </p>
+                </div>
+
+                <!-- Canaux -->
+                <div class="bg-orange-50 p-6 rounded-xl border-l-4 border-orange-500">
+                    <div class="flex items-center mb-3">
+                        <div class="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center mr-3">
+                            <i class="fas fa-bullhorn text-orange-600"></i>
+                        </div>
+                        <h3 class="font-bold text-lg text-gray-800">Canaux</h3>
+                    </div>
+                    <p class="text-gray-700 text-sm leading-relaxed">
+                        {{.Response.Canaux}}
+                    </p>
+                </div>
+
+                <!-- Modèle économique -->
+                <div class="bg-indigo-50 p-6 rounded-xl border-l-4 border-indigo-500">
+                    <div class="flex items-center mb-3">
+                        <div class="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center mr-3">
+                            <i class="fas fa-chart-bar text-indigo-600"></i>
+                        </div>
+                        <h3 class="font-bold text-lg text-gray-800">Modèle Économique</h3>
+                    </div>
+                    <p class="text-gray-700 text-sm leading-relaxed">
+                        {{.Response.Modele}}
+                    </p>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="mt-8 flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-4">
+                <a href="/" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl transition-colors flex items-center justify-center">
+                    <i class="fas fa-redo mr-2"></i> Nouveau Pitch
+                </a>
+                <!-- <button class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-6 py-3 rounded-xl transition-colors flex items-center justify-center">
+                    <i class="fas fa-download mr-2"></i> Exporter PDF
+                </button>
+                <button class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-xl transition-colors flex items-center justify-center">
+                    <i class="fas fa-share-alt mr-2"></i> Partager
+                </button> -->
+            </div>
+        </div>
+        {{end}}
+
+        <!-- État de chargement -->
+        {{if .Loading}}
+        <div class="bg-white rounded-2xl shadow-xl p-8 text-center">
+            <div class="loader mx-auto mb-6"></div>
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">Génération de votre pitch</h2>
+            <p class="text-gray-600 mb-2">Notre IA analyse votre projet et structure votre pitch...</p>
+        </div>
+        {{end}}
     </div>
 
-    <div class="loading-overlay hidden" id="loadingOverlay">
-        <div class="loading-spinner">
-            <i class="fas fa-spinner fa-spin"></i>
-            <p>L'IA analyse votre idée...</p>
-        </div>
-    </div>
-
-    <script src="script.js"></script>
+    <style>
+        .loader {
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
 </body>
 </html>
