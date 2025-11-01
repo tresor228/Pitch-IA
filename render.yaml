@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: pitch-ia
+    env: go
+    buildCommand: go build -o pitch
+    startCommand: ./pitch
+    envVars:
+      - key: PORT
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+

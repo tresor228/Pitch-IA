@@ -5,17 +5,40 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"pitch/models"
 	"pitch/service"
 )
 
+// getTemplatePath retourne le chemin absolu vers le template
+func getTemplatePath() string {
+	// En production (Render/Vercel), les fichiers peuvent être dans le répertoire racine
+	paths := []string{
+		"views/Pitch.html",
+		"./views/Pitch.html",
+		filepath.Join("views", "Pitch.html"),
+	}
+	
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			absPath, _ := filepath.Abs(path)
+			return absPath
+		}
+	}
+	
+	// Fallback vers le chemin relatif
+	return "views/Pitch.html"
+}
+
 // Pitch affiche la page principale (GET /)
 func Pitch(w http.ResponseWriter, r *http.Request) {
-	tmpl, err := template.ParseFiles("views/Pitch.html")
+	tmplPath := getTemplatePath()
+	tmpl, err := template.ParseFiles(tmplPath)
 	if err != nil {
-		log.Printf("error parsing template: %v", err)
+		log.Printf("error parsing template from %s: %v", tmplPath, err)
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return
 	}
@@ -43,9 +66,10 @@ func AnalyzePitch(w http.ResponseWriter, r *http.Request) {
 
 	desc := r.FormValue("project_description")
 
-	tmpl, err := template.ParseFiles("views/Pitch.html")
+	tmplPath := getTemplatePath()
+	tmpl, err := template.ParseFiles(tmplPath)
 	if err != nil {
-		log.Printf("error parsing template: %v", err)
+		log.Printf("error parsing template from %s: %v", tmplPath, err)
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return
 	}
