@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
@@ -15,21 +16,27 @@ import (
 
 // getTemplatePath retourne le chemin absolu vers le template
 func getTemplatePath() string {
-	// En production (Render/Vercel), les fichiers peuvent être dans le répertoire racine
+	// Chemins possibles (en production, les fichiers sont dans le répertoire de travail)
 	paths := []string{
 		"views/Pitch.html",
 		"./views/Pitch.html",
 		filepath.Join("views", "Pitch.html"),
+		filepath.Join(".", "views", "Pitch.html"),
 	}
 	
+	// Essayer chaque chemin
 	for _, path := range paths {
 		if _, err := os.Stat(path); err == nil {
-			absPath, _ := filepath.Abs(path)
-			return absPath
+			absPath, err := filepath.Abs(path)
+			if err == nil {
+				log.Printf("Template trouvé: %s", absPath)
+				return absPath
+			}
 		}
 	}
 	
-	// Fallback vers le chemin relatif
+	// Fallback vers le chemin relatif (sera résolu au runtime)
+	log.Printf(" Template non trouvé dans les chemins standards, utilisation du chemin relatif")
 	return "views/Pitch.html"
 }
 
@@ -38,8 +45,12 @@ func Pitch(w http.ResponseWriter, r *http.Request) {
 	tmplPath := getTemplatePath()
 	tmpl, err := template.ParseFiles(tmplPath)
 	if err != nil {
-		log.Printf("error parsing template from %s: %v", tmplPath, err)
-		http.Error(w, "Template error", http.StatusInternalServerError)
+		log.Printf(" Erreur parsing template from %s: %v", tmplPath, err)
+		log.Printf(" Répertoire de travail: %s", func() string {
+			wd, _ := os.Getwd()
+			return wd
+		}())
+		http.Error(w, fmt.Sprintf("Template error: %v", err), http.StatusInternalServerError)
 		return
 	}
 
