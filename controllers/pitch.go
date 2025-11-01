@@ -1,9 +1,11 @@
 package controllers
 
 import (
+	"encoding/json"
 	"html/template"
 	"log"
 	"net/http"
+	"strings"
 
 	"pitch/models"
 	"pitch/service"
@@ -61,9 +63,37 @@ func AnalyzePitch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Appel au service (mock pour l'instant)
-	resp := service.GeneratePitchResponse(desc)
+	// Appel direct à l'API (sortie du mode demo)
+	resp := service.GenerationwithAI(desc)
+	if resp == nil {
+		// Si la clé API n'est pas présente ou erreur côté service
+		data.Error = "Impossible de générer le pitch : API non configurée ou erreur interne. Vérifiez la variable d'environnement OPENAI_API_KEY."
+		// Si c'est une requête AJAX, retourner JSON
+		accept := r.Header.Get("Accept")
+		xreq := r.Header.Get("X-Requested-With")
+		if strings.Contains(accept, "application/json") || xreq == "XMLHttpRequest" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"error": data.Error})
+			return
+		}
+
+		tmpl.Execute(w, data)
+		return
+	}
+
 	data.Response = resp
+
+	// Log for debugging parsing issues
+	log.Printf("Parsed response: %+v", resp)
+
+	// Si requête AJAX, renvoyer JSON
+	accept := r.Header.Get("Accept")
+	xreq := r.Header.Get("X-Requested-With")
+	if strings.Contains(accept, "application/json") || xreq == "XMLHttpRequest" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(data.Response)
+		return
+	}
 
 	if err := tmpl.Execute(w, data); err != nil {
 		log.Printf("error executing template: %v", err)

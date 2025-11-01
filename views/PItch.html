@@ -38,7 +38,12 @@
             </form>
         </div>
 
-        <!-- Affichage des résultats structurés -->
+        <!-- Message d'erreur (si présent) -->
+        {{if .Error}}
+        <div class="bg-red-100 text-red-700 p-4 rounded-xl mb-4">{{.Error}}</div>
+        {{end}}
+
+        <!-- Affichage des résultats structurés (rendu serveur si présent) -->
         {{if .Response}}
         <div class="bg-white rounded-2xl shadow-xl p-6 md:p-8">
             <div class="text-center mb-8">
@@ -135,22 +140,7 @@
                 <a href="/" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl transition-colors flex items-center justify-center">
                     <i class="fas fa-redo mr-2"></i> Nouveau Pitch
                 </a>
-                <!-- <button class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-6 py-3 rounded-xl transition-colors flex items-center justify-center">
-                    <i class="fas fa-download mr-2"></i> Exporter PDF
-                </button>
-                <button class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-xl transition-colors flex items-center justify-center">
-                    <i class="fas fa-share-alt mr-2"></i> Partager
-                </button> -->
             </div>
-        </div>
-        {{end}}
-
-        <!-- État de chargement -->
-        {{if .Loading}}
-        <div class="bg-white rounded-2xl shadow-xl p-8 text-center">
-            <div class="loader mx-auto mb-6"></div>
-            <h2 class="text-2xl font-bold text-gray-800 mb-4">Génération de votre pitch</h2>
-            <p class="text-gray-600 mb-2">Notre IA analyse votre projet et structure votre pitch...</p>
         </div>
         {{end}}
     </div>
