@@ -14,6 +14,14 @@ import (
 	"pitch/service"
 )
 
+// min retourne le minimum entre deux entiers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // getTemplatePath retourne le chemin absolu vers le template
 func getTemplatePath() string {
 	// Chemins possibles (en production, les fichiers sont dans le répertoire de travail)
@@ -70,7 +78,19 @@ func Pitch(w http.ResponseWriter, r *http.Request) {
 
 // AnalyzePitch traite le formulaire POST /analyze-pitch
 func AnalyzePitch(w http.ResponseWriter, r *http.Request) {
+	// Protection contre les panics
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("PANIC dans AnalyzePitch: %v", err)
+			http.Error(w, "Erreur interne du serveur", http.StatusInternalServerError)
+		}
+	}()
+
+	// Limiter la taille du body (max 10KB pour la description)
+	r.Body = http.MaxBytesReader(w, r.Body, 10240)
+	
 	if err := r.ParseForm(); err != nil {
+		log.Printf("Erreur ParseForm: %v", err)
 		http.Error(w, "Invalid form", http.StatusBadRequest)
 		return
 	}
@@ -121,8 +141,10 @@ func AnalyzePitch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Appel direct à l'API (sortie du mode demo)
+	log.Printf("Début génération AI pour: %s", desc[:min(50, len(desc))])
 	resp := service.GenerationwithAI(desc)
 	if resp == nil {
+		log.Printf("Génération AI a échoué ou retourné nil")
 		// Si la clé API n'est pas présente ou erreur côté service
 		data.Error = "Impossible de générer le pitch : API non configurée ou erreur interne. Vérifiez la variable d'environnement OPENAI_API_KEY."
 		// Si c'est une requête AJAX, retourner JSON

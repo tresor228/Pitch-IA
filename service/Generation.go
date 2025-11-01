@@ -17,18 +17,22 @@ import (
 func GenerationwithAI(input string) *models.PitchResponse {
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
+		log.Printf("OPENAI_API_KEY non définie")
 		return nil
 	}
 
 	client := openai.NewClient(apiKey)
+	log.Printf("Création du client OpenAI")
 
 	system := "Tu es un assistant qui doit retourner STRICTEMENT un pitch structuré en français avec 6 sections numérotées. Chaque section doit être sur une ligne séparée avec son numéro, suivi du label entre crochets, puis le contenu. Format exact:\n1. [Problème] Texte du problème\n2. [Solution] Texte de la solution\n3. [Marché] Texte du marché\n4. [Valeur] Texte de la valeur\n5. [Canaux] Texte des canaux\n6. [Modèle] Texte du modèle\nNe mélange pas les sections. Chaque section sur sa propre ligne numérotée."
 
 	prompt := fmt.Sprintf("Génère un pitch structuré pour la description suivante. Répond UNIQUEMENT au format ci-dessous, une section par ligne :\n\n1. [Problème] Décris le problème que résout ce projet\n2. [Solution] Décris la solution proposée\n3. [Marché] Décris le marché cible\n4. [Valeur] Décris la proposition de valeur unique\n5. [Canaux] Décris les canaux de distribution\n6. [Modèle] Décris le modèle économique\n\nDescription du projet : %s", input)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	// Timeout réduit à 45 secondes pour éviter les timeouts Render (qui sont souvent à 30s)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 
+	log.Printf("Appel à OpenAI avec timeout de 45s")
 	resp, err := client.CreateChatCompletion(
 		ctx,
 		openai.ChatCompletionRequest{
@@ -46,9 +50,12 @@ func GenerationwithAI(input string) *models.PitchResponse {
 		},
 	)
 	if err != nil {
-		log.Printf("ChatCompletion error: %v\n", err)
+		log.Printf("ChatCompletion error: %v", err)
+		// Ne pas retourner nil directement, retourner une réponse vide avec erreur
 		return nil
 	}
+
+	log.Printf("Réponse OpenAI reçue, %d choix disponibles", len(resp.Choices))
 
 	if len(resp.Choices) == 0 {
 		return nil
