@@ -13,7 +13,7 @@ import (
 
 // Pitch affiche la page principale (GET /)
 func Pitch(w http.ResponseWriter, r *http.Request) {
-	tmpl, err := template.ParseFiles("views/PItch.html")
+	tmpl, err := template.ParseFiles("views/Pitch.html")
 	if err != nil {
 		log.Printf("error parsing template: %v", err)
 		http.Error(w, "Template error", http.StatusInternalServerError)
@@ -43,7 +43,7 @@ func AnalyzePitch(w http.ResponseWriter, r *http.Request) {
 
 	desc := r.FormValue("project_description")
 
-	tmpl, err := template.ParseFiles("views/PItch.html")
+	tmpl, err := template.ParseFiles("views/Pitch.html")
 	if err != nil {
 		log.Printf("error parsing template: %v", err)
 		http.Error(w, "Template error", http.StatusInternalServerError)
@@ -59,7 +59,29 @@ func AnalyzePitch(w http.ResponseWriter, r *http.Request) {
 
 	if desc == "" {
 		data.Error = "Veuillez décrire votre projet."
-		tmpl.Execute(w, data)
+		if err := tmpl.Execute(w, data); err != nil {
+			log.Printf("error executing template: %v", err)
+			http.Error(w, "Render error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Validation de la longueur
+	if len(desc) < 10 {
+		data.Error = "La description doit contenir au moins 10 caractères."
+		if err := tmpl.Execute(w, data); err != nil {
+			log.Printf("error executing template: %v", err)
+			http.Error(w, "Render error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	if len(desc) > 2000 {
+		data.Error = "La description ne doit pas dépasser 2000 caractères."
+		if err := tmpl.Execute(w, data); err != nil {
+			log.Printf("error executing template: %v", err)
+			http.Error(w, "Render error", http.StatusInternalServerError)
+		}
 		return
 	}
 
@@ -73,11 +95,15 @@ func AnalyzePitch(w http.ResponseWriter, r *http.Request) {
 		xreq := r.Header.Get("X-Requested-With")
 		if strings.Contains(accept, "application/json") || xreq == "XMLHttpRequest" {
 			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": data.Error})
 			return
 		}
 
-		tmpl.Execute(w, data)
+		if err := tmpl.Execute(w, data); err != nil {
+			log.Printf("error executing template: %v", err)
+			http.Error(w, "Render error", http.StatusInternalServerError)
+		}
 		return
 	}
 

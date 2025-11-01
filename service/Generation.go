@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"pitch/models"
 	"regexp"
 	"strings"
+	"time"
 
 	openai "github.com/sashabaranov/go-openai"
 )
@@ -24,8 +26,11 @@ func GenerationwithAI(input string) *models.PitchResponse {
 
 	prompt := fmt.Sprintf("Génère un pitch structuré pour la description suivante. Répond exactement au format numéroté ci-dessous (en français) :\n1. [Problème] ...\n2. [Solution] ...\n3. [Marché] ...\n4. [Valeur] ...\n5. [Canaux] ...\n6. [Modèle] ...\nNe rajoute pas de texte hors de ces sections. Description : %s", input)
 
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
 	resp, err := client.CreateChatCompletion(
-		context.Background(),
+		ctx,
 		openai.ChatCompletionRequest{
 			Model: openai.GPT3Dot5Turbo,
 			Messages: []openai.ChatCompletionMessage{
@@ -41,7 +46,7 @@ func GenerationwithAI(input string) *models.PitchResponse {
 		},
 	)
 	if err != nil {
-		fmt.Printf("ChatCompletion error: %v\n", err)
+		log.Printf("ChatCompletion error: %v\n", err)
 		return nil
 	}
 
@@ -53,14 +58,23 @@ func GenerationwithAI(input string) *models.PitchResponse {
 	parsed := parseAIResponse(content)
 
 	// Si certaines sections restent vides, remplir avec une suggestion minimale basée sur l'entrée
+	if parsed.Probleme == "" {
+		parsed.Probleme = "Problème à définir basé sur votre description."
+	}
 	if parsed.Solution == "" {
-		parsed.Solution = fmt.Sprintf("Suggestion de solution basée sur la description : %s", input)
+		parsed.Solution = "Solution à développer selon votre projet."
+	}
+	if parsed.Marche == "" {
+		parsed.Marche = "Marché cible à identifier."
 	}
 	if parsed.Valeur == "" {
-		parsed.Valeur = fmt.Sprintf("Valeur principale : améliore l'expérience utilisateur et réduit les coûts liés à %s", input)
+		parsed.Valeur = "Proposition de valeur unique à définir."
+	}
+	if parsed.Canaux == "" {
+		parsed.Canaux = "Canaux de distribution à mettre en place."
 	}
 	if parsed.Modele == "" {
-		parsed.Modele = "Modèle proposé : freemium + abonnement premium ou commissions selon le service."
+		parsed.Modele = "Modèle économique : freemium + abonnement premium ou commissions selon le service."
 	}
 
 	return parsed
