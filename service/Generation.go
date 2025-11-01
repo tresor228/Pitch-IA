@@ -22,9 +22,9 @@ func GenerationwithAI(input string) *models.PitchResponse {
 
 	client := openai.NewClient(apiKey)
 
-	system := "Tu es un assistant qui doit retourner STRICTEMENT un pitch structuré en français avec 6 sections numérotées. Répond uniquement avec les sections demandées, chaque section commençant par son numéro et son label entre crochets exactement comme ci-dessous. Si tu n'as pas assez d'information, écris une brève suggestion pour cette section (1-2 phrases). Ne rajoute pas de texte hors des sections."
+	system := "Tu es un assistant qui doit retourner STRICTEMENT un pitch structuré en français avec 6 sections numérotées. Chaque section doit être sur une ligne séparée avec son numéro, suivi du label entre crochets, puis le contenu. Format exact:\n1. [Problème] Texte du problème\n2. [Solution] Texte de la solution\n3. [Marché] Texte du marché\n4. [Valeur] Texte de la valeur\n5. [Canaux] Texte des canaux\n6. [Modèle] Texte du modèle\nNe mélange pas les sections. Chaque section sur sa propre ligne numérotée."
 
-	prompt := fmt.Sprintf("Génère un pitch structuré pour la description suivante. Répond exactement au format numéroté ci-dessous (en français) :\n1. [Problème] ...\n2. [Solution] ...\n3. [Marché] ...\n4. [Valeur] ...\n5. [Canaux] ...\n6. [Modèle] ...\nNe rajoute pas de texte hors de ces sections. Description : %s", input)
+	prompt := fmt.Sprintf("Génère un pitch structuré pour la description suivante. Répond UNIQUEMENT au format ci-dessous, une section par ligne :\n\n1. [Problème] Décris le problème que résout ce projet\n2. [Solution] Décris la solution proposée\n3. [Marché] Décris le marché cible\n4. [Valeur] Décris la proposition de valeur unique\n5. [Canaux] Décris les canaux de distribution\n6. [Modèle] Décris le modèle économique\n\nDescription du projet : %s", input)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -82,15 +82,11 @@ func GenerationwithAI(input string) *models.PitchResponse {
 
 // parseAIResponse extrait les sections françaises du texte retourné par l'IA
 func parseAIResponse(content string) *models.PitchResponse {
-	// mapping par défaut
 	result := &models.PitchResponse{}
-	// Première approche: parser robuste basé sur détection des en-têtes numérotés
-	// On repère les marqueurs "1.", "2)" n'importe où dans le texte (inline ou lignes séparées),
-	// puis on extrait le label qui suit (ex: "[Problème]" ou "Problème:") et on prend tout
-	// le texte jusqu'à l'en-tête suivant.
-	headerAnywhereRegex := regexp.MustCompile(`\d+\s*[\.\)]\s*`)
-	headerPos := headerAnywhereRegex.FindAllStringIndex(content, -1)
-
+	
+	// Diviser le contenu en lignes pour un meilleur contrôle
+	lines := strings.Split(content, "\n")
+	
 	// mapping des synonymes vers clés
 	synonyms := map[string][]string{
 		"probleme": {"problème", "probleme"},
@@ -104,7 +100,6 @@ func parseAIResponse(content string) *models.PitchResponse {
 	// helper: detect canonical key from a label string
 	detectKey := func(label string) string {
 		l := strings.ToLower(strings.TrimSpace(label))
-		// remove surrounding brackets if any
 		l = strings.Trim(l, "[]")
 		for k, list := range synonyms {
 			for _, s := range list {
@@ -116,61 +111,129 @@ func parseAIResponse(content string) *models.PitchResponse {
 		return ""
 	}
 
-	// helper: split header line into label and inline rest
-	headerLabelRe := regexp.MustCompile(`(?i)^\s*\[?\s*([^\]\:\-–—]+?)\s*\]?\s*[:\-–—]?\s*(.*)$`)
-
-	if len(headerPos) > 0 {
-		for i, pos := range headerPos {
-			markerEnd := pos[1]
-			var end int
-			if i+1 < len(headerPos) {
-				end = headerPos[i+1][0]
-			} else {
-				end = len(content)
+	// Regex pour détecter les en-têtes numérotés: "1. [Label]" ou "1. Label" ou "1) Label"
+	headerRegex := regexp.MustCompile(`^\s*(\d+)\s*[\.\)]\s*\[?\s*([^\]\:\-–—]+?)\s*\]?\s*[:\-–—]?\s*(.*)$`)
+	
+	var currentSection string
+	var currentContent []string
+	
+	// Fonction pour sauvegarder la section courante
+	saveCurrentSection := func(key string, content []string) {
+		text := strings.TrimSpace(strings.Join(content, "\n"))
+		if text == "" {
+			return
+		}
+		
+		switch key {
+		case "probleme":
+			if result.Probleme == "" {
+				result.Probleme = text
 			}
-
-			// sectionText starts after the numeric marker (e.g. after "1.")
-			sectionText := strings.TrimSpace(content[markerEnd:end])
-
-			// headerLabelRe extracts label and inline remainder
-			label := sectionText
-			inline := ""
-			if m := headerLabelRe.FindStringSubmatch(sectionText); len(m) >= 3 {
-				label = m[1]
-				inline = strings.TrimSpace(m[2])
+		case "solution":
+			if result.Solution == "" {
+				result.Solution = text
 			}
-
-			key := detectKey(label)
-
-			// body is the rest of the sectionText (inline already contains the start)
-			body := strings.TrimSpace(inline)
-			// if inline was empty, take whole sectionText
-			if body == "" {
-				body = strings.TrimSpace(sectionText)
+		case "marche":
+			if result.Marche == "" {
+				result.Marche = text
 			}
-
-			switch key {
-			case "probleme":
-				result.Probleme = body
-			case "solution":
-				result.Solution = body
-			case "marche":
-				result.Marche = body
-			case "valeur":
-				result.Valeur = body
-			case "canaux":
-				result.Canaux = body
-			case "modele":
-				result.Modele = body
-			default:
-				// unknown header: ignore
+		case "valeur":
+			if result.Valeur == "" {
+				result.Valeur = text
+			}
+		case "canaux":
+			if result.Canaux == "" {
+				result.Canaux = text
+			}
+		case "modele":
+			if result.Modele == "" {
+				result.Modele = text
 			}
 		}
 	}
+	
+	// Regex pour détecter toutes les sections dans une ligne (format compact)
+	multiSectionRegex := regexp.MustCompile(`(\d+)\s*[\.\)]\s*\[?\s*([^\]\:\-–—]+?)\s*\]?\s*[:\-–—]?\s*([^\d]*?)(?=\d+\s*[\.\)]\s*\[|$)`)
+	
+	// Parcourir toutes les lignes
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		
+		// D'abord, vérifier si la ligne contient plusieurs sections (format compact)
+		if matches := multiSectionRegex.FindAllStringSubmatch(trimmed, -1); len(matches) > 1 {
+			// Cette ligne contient plusieurs sections, les traiter séparément
+			for _, m := range matches {
+				if len(m) >= 4 {
+					// Sauvegarder la section précédente
+					if currentSection != "" && len(currentContent) > 0 {
+						saveCurrentSection(currentSection, currentContent)
+					}
+					
+					label := strings.TrimSpace(m[2])
+					content := strings.TrimSpace(m[3])
+					key := detectKey(label)
+					
+					if key != "" {
+						currentSection = key
+						currentContent = []string{}
+						if content != "" {
+							currentContent = append(currentContent, content)
+						}
+					}
+				}
+			}
+		} else if match := headerRegex.FindStringSubmatch(trimmed); match != nil {
+			// C'est un en-tête de section standard (une section par ligne)
+			// Sauvegarder la section précédente si elle existe
+			if currentSection != "" && len(currentContent) > 0 {
+				saveCurrentSection(currentSection, currentContent)
+			}
+			
+			// Nouvelle section détectée
+			label := strings.TrimSpace(match[2])
+			inlineContent := strings.TrimSpace(match[3])
+			
+			currentSection = detectKey(label)
+			currentContent = []string{}
+			
+			// Si il y a du contenu inline après le label, l'ajouter
+			if inlineContent != "" {
+				currentContent = append(currentContent, inlineContent)
+			}
+		} else if currentSection != "" {
+			// Vérifier si cette ligne commence une nouvelle section (cas où le format n'est pas standard)
+			if newMatch := multiSectionRegex.FindStringSubmatch(trimmed); newMatch != nil && len(newMatch) >= 4 {
+				// Sauvegarder la section précédente
+				if len(currentContent) > 0 {
+					saveCurrentSection(currentSection, currentContent)
+				}
+				
+				label := strings.TrimSpace(newMatch[2])
+				content := strings.TrimSpace(newMatch[3])
+				currentSection = detectKey(label)
+				currentContent = []string{}
+				if content != "" {
+					currentContent = append(currentContent, content)
+				}
+			} else if trimmed != "" {
+				// C'est une ligne de contenu normale de la section courante
+				currentContent = append(currentContent, trimmed)
+			}
+		}
+	}
+	
+	// Sauvegarder la dernière section
+	if currentSection != "" && len(currentContent) > 0 {
+		saveCurrentSection(currentSection, currentContent)
+	}
 
 	// Si certaines sections sont encore vides, tenter une extraction simple par labels suivis de ':'
+	// Cette partie ne s'exécute que si le parsing principal n'a pas fonctionné
 	if result.Probleme == "" || result.Solution == "" || result.Marche == "" || result.Valeur == "" || result.Canaux == "" || result.Modele == "" {
-		// essayer des labels français avec ':'
+		// essayer des labels français avec ':' (fallback)
 		labels := []struct{ key, label string }{
 			{"Probleme", "Problème:"},
 			{"Solution", "Solution:"},
@@ -179,10 +242,10 @@ func parseAIResponse(content string) *models.PitchResponse {
 			{"Canaux", "Canaux:"},
 			{"Modele", "Modèle:"},
 		}
-		lines := strings.Split(content, "\n")
+		fallbackLines := strings.Split(content, "\n")
 		current := ""
 		buf := map[string][]string{}
-		for _, line := range lines {
+		for _, line := range fallbackLines {
 			trimmed := strings.TrimSpace(line)
 			if trimmed == "" {
 				continue
@@ -205,28 +268,23 @@ func parseAIResponse(content string) *models.PitchResponse {
 		}
 		// assign only to missing fields
 		if v, ok := buf["Probleme"]; ok && result.Probleme == "" {
-			result.Probleme = strings.Join(v, " \n")
+			result.Probleme = strings.Join(v, "\n")
 		}
 		if v, ok := buf["Solution"]; ok && result.Solution == "" {
-			result.Solution = strings.Join(v, " \n")
+			result.Solution = strings.Join(v, "\n")
 		}
 		if v, ok := buf["Marche"]; ok && result.Marche == "" {
-			result.Marche = strings.Join(v, " \n")
+			result.Marche = strings.Join(v, "\n")
 		}
 		if v, ok := buf["Valeur"]; ok && result.Valeur == "" {
-			result.Valeur = strings.Join(v, " \n")
+			result.Valeur = strings.Join(v, "\n")
 		}
 		if v, ok := buf["Canaux"]; ok && result.Canaux == "" {
-			result.Canaux = strings.Join(v, " \n")
+			result.Canaux = strings.Join(v, "\n")
 		}
 		if v, ok := buf["Modele"]; ok && result.Modele == "" {
-			result.Modele = strings.Join(v, " \n")
+			result.Modele = strings.Join(v, "\n")
 		}
-	}
-
-	// fallback: si tout vide, mettre le contenu entier dans Probleme
-	if result.Probleme == "" && result.Solution == "" && result.Marche == "" && result.Valeur == "" && result.Canaux == "" && result.Modele == "" {
-		result.Probleme = strings.TrimSpace(content)
 	}
 
 	return result
