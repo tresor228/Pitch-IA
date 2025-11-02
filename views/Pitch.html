@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Assistant Pitch IA</title>
+    <title>Assistant Pitch AI</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -12,7 +12,7 @@
         <!-- Formulaire principal -->
         <div class="bg-white rounded-2xl shadow-xl p-6 md:p-8 mb-6">
             <div class="text-center mb-2">
-                <h1 class="text-2xl md:text-3xl font-bold text-gray-800">Générateur de Pitch IA</h1>
+                <h1 class="text-2xl md:text-3xl font-bold text-gray-800">Générateur de Pitch AI</h1>
                 <p class="text-gray-600 mt-2">Obtenez une structure de pitch professionnelle en quelques secondes</p>
             </div>
             
@@ -53,7 +53,7 @@
 
         <!-- Message d'erreur (si présent) -->
         {{if .Error}}
-        <div class="bg-red-100 text-red-700 p-4 rounded-xl mb-4">{{.Error}}</div>
+        <div class="bg-red-100 text-red-700 p-4 rounded-xl mb-4 whitespace-pre-line">{{.Error}}</div>
         {{end}}
 
         <!-- Affichage des résultats structurés (rendu serveur si présent) -->

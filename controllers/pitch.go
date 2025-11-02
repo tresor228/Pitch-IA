@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -37,14 +36,11 @@ func getTemplatePath() string {
 		if _, err := os.Stat(path); err == nil {
 			absPath, err := filepath.Abs(path)
 			if err == nil {
-				log.Printf("Template trouvé: %s", absPath)
 				return absPath
 			}
 		}
 	}
 
-	// Fallback vers le chemin relatif (sera résolu au runtime)
-	log.Printf(" Template non trouvé dans les chemins standards, utilisation du chemin relatif")
 	return "views/Pitch.html"
 }
 
@@ -53,11 +49,6 @@ func Pitch(w http.ResponseWriter, r *http.Request) {
 	tmplPath := getTemplatePath()
 	tmpl, err := template.ParseFiles(tmplPath)
 	if err != nil {
-		log.Printf(" Erreur parsing template from %s: %v", tmplPath, err)
-		log.Printf(" Répertoire de travail: %s", func() string {
-			wd, _ := os.Getwd()
-			return wd
-		}())
 		http.Error(w, fmt.Sprintf("Template error: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -70,7 +61,6 @@ func Pitch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := tmpl.Execute(w, data); err != nil {
-		log.Printf("error executing template: %v", err)
 		http.Error(w, "Render error", http.StatusInternalServerError)
 		return
 	}
@@ -81,7 +71,6 @@ func AnalyzePitch(w http.ResponseWriter, r *http.Request) {
 	// Protection contre les panics
 	defer func() {
 		if err := recover(); err != nil {
-			log.Printf("PANIC dans AnalyzePitch: %v", err)
 			http.Error(w, "Erreur interne du serveur", http.StatusInternalServerError)
 		}
 	}()
@@ -90,7 +79,6 @@ func AnalyzePitch(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 10240)
 
 	if err := r.ParseForm(); err != nil {
-		log.Printf("Erreur ParseForm: %v", err)
 		http.Error(w, "Invalid form", http.StatusBadRequest)
 		return
 	}
@@ -100,7 +88,6 @@ func AnalyzePitch(w http.ResponseWriter, r *http.Request) {
 	tmplPath := getTemplatePath()
 	tmpl, err := template.ParseFiles(tmplPath)
 	if err != nil {
-		log.Printf("error parsing template from %s: %v", tmplPath, err)
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return
 	}
@@ -115,7 +102,6 @@ func AnalyzePitch(w http.ResponseWriter, r *http.Request) {
 	if desc == "" {
 		data.Error = "Veuillez décrire votre projet."
 		if err := tmpl.Execute(w, data); err != nil {
-			log.Printf("error executing template: %v", err)
 			http.Error(w, "Render error", http.StatusInternalServerError)
 		}
 		return
@@ -125,7 +111,6 @@ func AnalyzePitch(w http.ResponseWriter, r *http.Request) {
 	if len(desc) < 10 {
 		data.Error = "La description doit contenir au moins 10 caractères."
 		if err := tmpl.Execute(w, data); err != nil {
-			log.Printf("error executing template: %v", err)
 			http.Error(w, "Render error", http.StatusInternalServerError)
 		}
 		return
@@ -134,25 +119,24 @@ func AnalyzePitch(w http.ResponseWriter, r *http.Request) {
 	if len(desc) > 2000 {
 		data.Error = "La description ne doit pas dépasser 2000 caractères."
 		if err := tmpl.Execute(w, data); err != nil {
-			log.Printf("error executing template: %v", err)
 			http.Error(w, "Render error", http.StatusInternalServerError)
 		}
 		return
 	}
 
-	// Appel direct à l'API (sortie du mode demo)
-	log.Printf("Début génération AI pour: %s", desc[:min(50, len(desc))])
 	resp := service.GenerationwithAI(desc)
 	if resp == nil {
-		log.Printf("Génération AI a échoué ou retourné nil")
 		// Vérifier si la clé API est présente pour donner un message d'erreur plus précis
 		apiKey := os.Getenv("OPENAI_API_KEY")
 		if apiKey == "" {
-			data.Error = "⚠️ La clé API OpenAI n'est pas configurée. Veuillez définir la variable d'environnement OPENAI_API_KEY."
-			log.Printf("Erreur: OPENAI_API_KEY manquante")
+			data.Error = "⚠️ La clé API OpenAI n'est pas configurée. Veuillez définir la variable d'environnement OPENAI_API_KEY dans les paramètres de votre service."
 		} else {
-			data.Error = "⚠️ Impossible de générer le pitch. Cela peut être dû à un problème réseau, un timeout ou une erreur de l'API OpenAI. Veuillez réessayer dans quelques instants."
-			log.Printf("Erreur: API OpenAI a échoué malgré la présence de la clé")
+			// Vérifier le format de la clé (doit commencer par sk-)
+			if !strings.HasPrefix(apiKey, "sk-") {
+				data.Error = "⚠️ Format de clé API invalide. La clé OpenAI doit commencer par 'sk-'. Vérifiez votre configuration."
+			} else {
+				data.Error = "⚠️ Impossible de générer le pitch après plusieurs tentatives.\n\nCauses possibles :\n• Problème réseau temporaire\n• Timeout de l'API OpenAI (>25s)\n• Quota/rate limit atteint\n• Service OpenAI temporairement indisponible\n\nVeuillez réessayer dans quelques instants."
+			}
 		}
 		// Si c'est une requête AJAX, retourner JSON
 		accept := r.Header.Get("Accept")
@@ -165,16 +149,12 @@ func AnalyzePitch(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := tmpl.Execute(w, data); err != nil {
-			log.Printf("error executing template: %v", err)
 			http.Error(w, "Render error", http.StatusInternalServerError)
 		}
 		return
 	}
 
 	data.Response = resp
-
-	// Log for debugging parsing issues
-	log.Printf("Parsed response: %+v", resp)
 
 	// Si requête AJAX, renvoyer JSON
 	accept := r.Header.Get("Accept")
@@ -186,7 +166,6 @@ func AnalyzePitch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := tmpl.Execute(w, data); err != nil {
-		log.Printf("error executing template: %v", err)
 		http.Error(w, "Render error", http.StatusInternalServerError)
 		return
 	}

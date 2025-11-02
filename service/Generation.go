@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"pitch/models"
 	"regexp"
@@ -17,12 +16,10 @@ import (
 func GenerationwithAI(input string) *models.PitchResponse {
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
-		log.Printf("OPENAI_API_KEY non définie")
 		return nil
 	}
 
 	client := openai.NewClient(apiKey)
-	log.Printf("Création du client OpenAI")
 
 	system := "Tu es un assistant spécialisé dans la création de pitchs structurés. Tu dois TOUJOURS répondre dans un format STRICT avec 6 sections numérotées en français. Chaque section doit être sur SA PROPRE LIGNE, commençant par le numéro suivi d'un point, puis le label entre crochets, puis le contenu. EXEMPLE DE FORMAT OBLIGATOIRE:\n\n1. [Problème] Texte du problème ici\n2. [Solution] Texte de la solution ici\n3. [Marché] Texte du marché ici\n4. [Valeur] Texte de la valeur ici\n5. [Canaux] Texte des canaux ici\n6. [Modèle] Texte du modèle ici\n\nIMPORTANT: Ne mets RIEN avant la première section. Ne mets RIEN après la dernière section. Une seule section par ligne. Utilise EXACTEMENT ce format avec les numéros, points, crochets et labels en français."
 
@@ -30,11 +27,9 @@ func GenerationwithAI(input string) *models.PitchResponse {
 
 	// Tentative avec retry (max 3 tentatives)
 	maxRetries := 3
-	var lastErr error
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		if attempt > 1 {
-			log.Printf("Tentative %d/%d après échec précédent", attempt, maxRetries)
 			time.Sleep(time.Duration(attempt) * time.Second) // Délai progressif
 		}
 
@@ -42,11 +37,11 @@ func GenerationwithAI(input string) *models.PitchResponse {
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 		defer cancel()
 		
-		log.Printf("Appel à OpenAI (tentative %d/%d) avec timeout de 25s", attempt, maxRetries)
+		modelName := "gpt-3.5-turbo"
 		resp, err := client.CreateChatCompletion(
 			ctx,
 			openai.ChatCompletionRequest{
-				Model: openai.GPT3Dot5Turbo,
+				Model: modelName,
 				Messages: []openai.ChatCompletionMessage{
 					{
 						Role:    openai.ChatMessageRoleSystem,
@@ -58,25 +53,18 @@ func GenerationwithAI(input string) *models.PitchResponse {
 					},
 				},
 				Temperature: 0.7, // Température pour des réponses plus consistantes
+				MaxTokens:   1000, // Limiter les tokens pour des réponses plus rapides
 			},
 		)
 		
 		if err != nil {
-			lastErr = err
-			log.Printf("ChatCompletion error (tentative %d): %v", attempt, err)
-			// Log détaillé pour le débogage
-			if err == context.DeadlineExceeded || ctx.Err() == context.DeadlineExceeded {
-				log.Printf("⚠️ Timeout: La requête a pris plus de 25 secondes")
+			errStr := err.Error()
+			
+			// Ne pas retry pour les erreurs d'authentification
+			if strings.Contains(errStr, "401") || strings.Contains(errStr, "unauthorized") || strings.Contains(errStr, "invalid") || strings.Contains(errStr, "authentication") {
+				return nil
 			}
-			// Log supplémentaire pour les erreurs réseau
-			if strings.Contains(err.Error(), "connection") || strings.Contains(err.Error(), "network") {
-				log.Printf("⚠️ Erreur réseau lors de l'appel à OpenAI")
-			}
-			// Log pour les erreurs d'authentification (ne pas retry)
-			if strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "unauthorized") || strings.Contains(err.Error(), "invalid") {
-				log.Printf("⚠️ Erreur d'authentification: vérifiez que OPENAI_API_KEY est valide")
-				return nil // Ne pas retry pour les erreurs d'auth
-			}
+			
 			// Continuer pour retry si ce n'est pas la dernière tentative
 			if attempt < maxRetries {
 				continue
@@ -84,34 +72,20 @@ func GenerationwithAI(input string) *models.PitchResponse {
 			return nil
 		}
 
-		log.Printf("Réponse OpenAI reçue (tentative %d), %d choix disponibles", attempt, len(resp.Choices))
-
 		if len(resp.Choices) == 0 {
 			if attempt < maxRetries {
-				log.Printf("Aucun choix dans la réponse, nouvelle tentative...")
 				continue
 			}
-			log.Printf("❌ Aucun choix dans la réponse après %d tentatives", maxRetries)
 			return nil
 		}
 
 		content := resp.Choices[0].Message.Content
 		if content == "" {
 			if attempt < maxRetries {
-				log.Printf("Contenu vide, nouvelle tentative...")
 				continue
 			}
-			log.Printf("❌ Contenu vide après %d tentatives", maxRetries)
 			return nil
 		}
-
-		// Fonction min locale pour éviter la dépendance externe
-		minLen := 500
-		if len(content) < minLen {
-			minLen = len(content)
-		}
-		log.Printf("✅ Contenu reçu d'OpenAI (tentative %d, premiers 500 caractères): %s", attempt, content[:minLen])
-		log.Printf("Longueur totale du contenu: %d caractères", len(content))
 
 		parsed := parseAIResponse(content)
 
@@ -136,25 +110,12 @@ func GenerationwithAI(input string) *models.PitchResponse {
 			filledCount++
 		}
 
-		log.Printf("Résultat du parsing - Sections trouvées: %d/6 (Problème: %t, Solution: %t, Marché: %t, Valeur: %t, Canaux: %t, Modèle: %t)",
-			filledCount, parsed.Probleme != "", parsed.Solution != "", parsed.Marche != "",
-			parsed.Valeur != "", parsed.Canaux != "", parsed.Modele != "")
-
 		// Si toutes les sections sont vides, c'est un échec de parsing - retry
 		if filledCount == 0 {
-			log.Printf("⚠️ Parsing échoué: toutes les sections sont vides. Contenu brut:\n%s", content)
 			if attempt < maxRetries {
-				log.Printf("Nouvelle tentative avec un prompt amélioré...")
 				continue
 			}
-			log.Printf("❌ Parsing complètement échoué après %d tentatives", maxRetries)
 			return nil
-		}
-
-		// Si au moins une section est remplie, on continue mais on remplit les manquantes
-		// Si toutes les sections sont vides après parsing, on retourne nil (pas de fallback)
-		if filledCount < 6 {
-			log.Printf("⚠️ Seulement %d/6 sections trouvées, remplissage des sections manquantes", filledCount)
 		}
 
 		// Si certaines sections restent vides, remplir avec une suggestion minimale basée sur l'entrée
@@ -180,8 +141,6 @@ func GenerationwithAI(input string) *models.PitchResponse {
 		return parsed
 	}
 
-	// Si on arrive ici, toutes les tentatives ont échoué
-	log.Printf("❌ Toutes les tentatives ont échoué. Dernière erreur: %v", lastErr)
 	return nil
 }
 
@@ -190,13 +149,11 @@ func parseAIResponse(content string) *models.PitchResponse {
 	result := &models.PitchResponse{}
 
 	if content == "" {
-		log.Printf("⚠️  Contenu vide reçu pour parsing")
 		return result
 	}
 
 	// Diviser le contenu en lignes pour un meilleur contrôle
 	lines := strings.Split(content, "\n")
-	log.Printf("Nombre de lignes à parser: %d", len(lines))
 
 	// mapping des synonymes vers clés
 	synonyms := map[string][]string{
@@ -223,8 +180,9 @@ func parseAIResponse(content string) *models.PitchResponse {
 	}
 
 	// Regex pour détecter les en-têtes numérotés: "1. [Label]" ou "1. Label" ou "1) Label"
-	// Pattern plus permissif pour capturer différents formats
-	headerRegex := regexp.MustCompile(`^\s*(\d+)\s*[\.\)]\s*\[?\s*([^\]\:\-–—]+?)\s*\]?\s*[:\-–—]?\s*(.*)$`)
+	// Pattern amélioré pour extraire correctement le label entre crochets
+	// Groupe 1: numéro, Groupe 2: label entre crochets (optionnel), Groupe 3: label sans crochets (si pas de crochets), Groupe 4: contenu
+	headerRegex := regexp.MustCompile(`^\s*(\d+)\s*[\.\)]\s*(?:\[([^\]]+)\]|([^:\-–—\[]+?))\s*[:\-–—]?\s*(.*)$`)
 
 	// Regex alternative plus simple pour détecter juste les numéros suivis de labels
 	// On utilise [^\d] au lieu de [^0-9\n] car c'est plus simple pour RE2
@@ -269,7 +227,7 @@ func parseAIResponse(content string) *models.PitchResponse {
 	}
 
 	// Regex pour détecter le début d'une section (sans lookahead - compatible RE2)
-	sectionStartRegex := regexp.MustCompile(`(\d+)\s*[\.\)]\s*\[?\s*([^\]\:\-–—]+?)\s*\]?\s*[:\-–—]?\s*`)
+	sectionStartRegex := regexp.MustCompile(`(\d+)\s*[\.\)]\s*(?:\[([^\]]+)\]|([^:\-–—\[]+?))\s*[:\-–—]?\s*`)
 
 	// Parcourir toutes les lignes
 	for _, line := range lines {
@@ -292,13 +250,19 @@ func parseAIResponse(content string) *models.PitchResponse {
 				}
 
 				sectionText := strings.TrimSpace(trimmed[startPos[0]:endPos])
-				if match := sectionStartRegex.FindStringSubmatch(sectionText); match != nil && len(match) >= 3 {
+				if match := sectionStartRegex.FindStringSubmatch(sectionText); match != nil && len(match) >= 4 {
 					// Sauvegarder la section précédente
 					if currentSection != "" && len(currentContent) > 0 {
 						saveCurrentSection(currentSection, currentContent)
 					}
 
-					label := strings.TrimSpace(match[2])
+					// match[1] = numéro, match[2] = label entre crochets, match[3] = label sans crochets
+					var label string
+					if match[2] != "" {
+						label = strings.TrimSpace(match[2]) // Label entre crochets
+					} else {
+						label = strings.TrimSpace(match[3]) // Label sans crochets
+					}
 					// Extraire le contenu après le label
 					labelEndIdx := sectionStartRegex.FindStringIndex(sectionText)
 					var content string
@@ -319,7 +283,7 @@ func parseAIResponse(content string) *models.PitchResponse {
 					}
 				}
 			}
-		} else if match := headerRegex.FindStringSubmatch(trimmed); match != nil {
+		} else if match := headerRegex.FindStringSubmatch(trimmed); match != nil && len(match) >= 5 {
 			// C'est un en-tête de section standard (une section par ligne)
 			// Sauvegarder la section précédente si elle existe
 			if currentSection != "" && len(currentContent) > 0 {
@@ -327,15 +291,16 @@ func parseAIResponse(content string) *models.PitchResponse {
 			}
 
 			// Nouvelle section détectée
-			label := strings.TrimSpace(match[2])
-			inlineContent := strings.TrimSpace(match[3])
+			// match[1] = numéro, match[2] = label entre crochets, match[3] = label sans crochets, match[4] = contenu
+			var label string
+			if match[2] != "" {
+				label = strings.TrimSpace(match[2]) // Label entre crochets [Problème]
+			} else {
+				label = strings.TrimSpace(match[3]) // Label sans crochets
+			}
+			inlineContent := strings.TrimSpace(match[4])
 
 			key := detectKey(label)
-			inlinePreview := inlineContent
-			if len(inlineContent) > 50 {
-				inlinePreview = inlineContent[:50] + "..."
-			}
-			log.Printf("Section détectée: label='%s' -> key='%s', contenu inline='%s'", label, key, inlinePreview)
 
 			currentSection = key
 			currentContent = []string{}
@@ -353,11 +318,15 @@ func parseAIResponse(content string) *models.PitchResponse {
 				}
 
 				// Extraire la nouvelle section
-				if match := headerRegex.FindStringSubmatch(trimmed); match != nil {
-					label := strings.TrimSpace(match[2])
-					content := strings.TrimSpace(match[3])
+				if match := headerRegex.FindStringSubmatch(trimmed); match != nil && len(match) >= 5 {
+					var label string
+					if match[2] != "" {
+						label = strings.TrimSpace(match[2]) // Label entre crochets
+					} else {
+						label = strings.TrimSpace(match[3]) // Label sans crochets
+					}
+					content := strings.TrimSpace(match[4])
 					key := detectKey(label)
-					log.Printf("Nouvelle section détectée dans ligne: label='%s' -> key='%s'", label, key)
 					currentSection = key
 					currentContent = []string{}
 					if content != "" {
@@ -380,7 +349,6 @@ func parseAIResponse(content string) *models.PitchResponse {
 					possibleLabel := labelParts[0]
 					key := detectKey(possibleLabel)
 					if key != "" {
-						log.Printf("Section trouvée avec regex simple: '%s' -> key='%s'", possibleLabel, key)
 						currentSection = key
 						currentContent = []string{}
 						// Ajouter le reste de la ligne comme contenu
@@ -397,11 +365,6 @@ func parseAIResponse(content string) *models.PitchResponse {
 	if currentSection != "" && len(currentContent) > 0 {
 		saveCurrentSection(currentSection, currentContent)
 	}
-
-	// Log du résultat final
-	log.Printf("Parsing terminé - Sections trouvées: Probleme=%d chars, Solution=%d chars, Marche=%d chars, Valeur=%d chars, Canaux=%d chars, Modele=%d chars",
-		len(result.Probleme), len(result.Solution), len(result.Marche),
-		len(result.Valeur), len(result.Canaux), len(result.Modele))
 
 	// Si certaines sections sont encore vides, tenter une extraction simple par labels suivis de ':'
 	// Cette partie ne s'exécute que si le parsing principal n'a pas fonctionné
