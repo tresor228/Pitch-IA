@@ -13,7 +13,7 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 )
 
-// GenerationwithAI appelle OpenAI et parse la réponse en PitchResponse.
+// GenerationwithAI appelle OpenAI et parse la réponse en PitchResponse avec retry.
 func GenerationwithAI(input string) *models.PitchResponse {
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
@@ -28,86 +28,149 @@ func GenerationwithAI(input string) *models.PitchResponse {
 
 	prompt := fmt.Sprintf("Génère un pitch structuré pour ce projet en utilisant EXACTEMENT le format ci-dessous (une ligne par section) :\n\n1. [Problème] Décris le problème spécifique que ce projet résout\n2. [Solution] Décris la solution concrète que ce projet apporte\n3. [Marché] Décris le marché cible et l'opportunité\n4. [Valeur] Décris la proposition de valeur unique\n5. [Canaux] Décris les canaux de distribution/acquisition\n6. [Modèle] Décris le modèle économique\n\nDescription du projet : %s\n\nRéponds UNIQUEMENT avec les 6 lignes au format ci-dessus, sans texte avant ou après.", input)
 
-	// Timeout réduit à 25 secondes pour éviter les timeouts Render/Vercel (qui sont souvent à 30s)
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
-	defer cancel()
-
-	log.Printf("Appel à OpenAI avec timeout de 25s")
-	resp, err := client.CreateChatCompletion(
-		ctx,
-		openai.ChatCompletionRequest{
-			Model: openai.GPT3Dot5Turbo,
-			Messages: []openai.ChatCompletionMessage{
-				{
-					Role:    openai.ChatMessageRoleSystem,
-					Content: system,
+	// Tentative avec retry (max 3 tentatives)
+	maxRetries := 3
+	var lastErr error
+	
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if attempt > 1 {
+			log.Printf("Tentative %d/%d après échec précédent", attempt, maxRetries)
+			time.Sleep(time.Duration(attempt) * time.Second) // Délai progressif
+		}
+		
+		// Timeout réduit à 25 secondes pour éviter les timeouts Render/Vercel (qui sont souvent à 30s)
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		
+		log.Printf("Appel à OpenAI (tentative %d/%d) avec timeout de 25s", attempt, maxRetries)
+		resp, err := client.CreateChatCompletion(
+			ctx,
+			openai.ChatCompletionRequest{
+				Model: openai.GPT3Dot5Turbo,
+				Messages: []openai.ChatCompletionMessage{
+					{
+						Role:    openai.ChatMessageRoleSystem,
+						Content: system,
+					},
+					{
+						Role:    openai.ChatMessageRoleUser,
+						Content: prompt,
+					},
 				},
-				{
-					Role:    openai.ChatMessageRoleUser,
-					Content: prompt,
-				},
+				Temperature: 0.7, // Température pour des réponses plus consistantes
 			},
-		},
-	)
-	if err != nil {
-		log.Printf("ChatCompletion error: %v", err)
-		// Log détaillé pour le débogage
-		if ctx.Err() == context.DeadlineExceeded {
-			log.Printf("⚠️ Timeout: La requête a pris plus de 25 secondes")
+		)
+		cancel()
+		
+		if err != nil {
+			lastErr = err
+			log.Printf("ChatCompletion error (tentative %d): %v", attempt, err)
+			// Log détaillé pour le débogage
+			if ctx.Err() == context.DeadlineExceeded {
+				log.Printf("⚠️ Timeout: La requête a pris plus de 25 secondes")
+			}
+			// Log supplémentaire pour les erreurs réseau
+			if strings.Contains(err.Error(), "connection") || strings.Contains(err.Error(), "network") {
+				log.Printf("⚠️ Erreur réseau lors de l'appel à OpenAI")
+			}
+			// Log pour les erreurs d'authentification (ne pas retry)
+			if strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "unauthorized") || strings.Contains(err.Error(), "invalid") {
+				log.Printf("⚠️ Erreur d'authentification: vérifiez que OPENAI_API_KEY est valide")
+				return nil // Ne pas retry pour les erreurs d'auth
+			}
+			// Continuer pour retry si ce n'est pas la dernière tentative
+			if attempt < maxRetries {
+				continue
+			}
+			return nil
 		}
-		// Log supplémentaire pour les erreurs réseau
-		if strings.Contains(err.Error(), "connection") || strings.Contains(err.Error(), "network") {
-			log.Printf("⚠️ Erreur réseau lors de l'appel à OpenAI")
+
+		log.Printf("Réponse OpenAI reçue (tentative %d), %d choix disponibles", attempt, len(resp.Choices))
+
+		if len(resp.Choices) == 0 {
+			if attempt < maxRetries {
+				log.Printf("Aucun choix dans la réponse, nouvelle tentative...")
+				continue
+			}
+			log.Printf("❌ Aucun choix dans la réponse après %d tentatives", maxRetries)
+			return nil
 		}
-		// Log pour les erreurs d'authentification
-		if strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "unauthorized") || strings.Contains(err.Error(), "invalid") {
-			log.Printf("⚠️ Erreur d'authentification: vérifiez que OPENAI_API_KEY est valide")
+
+		content := resp.Choices[0].Message.Content
+		if content == "" {
+			if attempt < maxRetries {
+				log.Printf("Contenu vide, nouvelle tentative...")
+				continue
+			}
+			log.Printf("❌ Contenu vide après %d tentatives", maxRetries)
+			return nil
 		}
-		return nil
-	}
+		
+		// Fonction min locale pour éviter la dépendance externe
+		minLen := 500
+		if len(content) < minLen {
+			minLen = len(content)
+		}
+		log.Printf("✅ Contenu reçu d'OpenAI (tentative %d, premiers 500 caractères): %s", attempt, content[:minLen])
+		log.Printf("Longueur totale du contenu: %d caractères", len(content))
+		
+		parsed := parseAIResponse(content)
+		
+		// Compter les sections remplies
+		filledCount := 0
+		if parsed.Probleme != "" { filledCount++ }
+		if parsed.Solution != "" { filledCount++ }
+		if parsed.Marche != "" { filledCount++ }
+		if parsed.Valeur != "" { filledCount++ }
+		if parsed.Canaux != "" { filledCount++ }
+		if parsed.Modele != "" { filledCount++ }
+		
+		log.Printf("Résultat du parsing - Sections trouvées: %d/6 (Problème: %t, Solution: %t, Marché: %t, Valeur: %t, Canaux: %t, Modèle: %t)",
+			filledCount, parsed.Probleme != "", parsed.Solution != "", parsed.Marche != "", 
+			parsed.Valeur != "", parsed.Canaux != "", parsed.Modele != "")
 
-	log.Printf("Réponse OpenAI reçue, %d choix disponibles", len(resp.Choices))
+		// Si toutes les sections sont vides, c'est un échec de parsing - retry
+		if filledCount == 0 {
+			log.Printf("⚠️ Parsing échoué: toutes les sections sont vides. Contenu brut:\n%s", content)
+			if attempt < maxRetries {
+				log.Printf("Nouvelle tentative avec un prompt amélioré...")
+				continue
+			}
+			log.Printf("❌ Parsing complètement échoué après %d tentatives", maxRetries)
+			return nil
+		}
+		
+		// Si au moins une section est remplie, on continue mais on remplit les manquantes
+		// Si toutes les sections sont vides après parsing, on retourne nil (pas de fallback)
+		if filledCount < 6 {
+			log.Printf("⚠️ Seulement %d/6 sections trouvées, remplissage des sections manquantes", filledCount)
+		}
 
-	if len(resp.Choices) == 0 {
-		return nil
-	}
+		// Si certaines sections restent vides, remplir avec une suggestion minimale basée sur l'entrée
+		if parsed.Probleme == "" {
+			parsed.Probleme = "Problème à définir basé sur votre description."
+		}
+		if parsed.Solution == "" {
+			parsed.Solution = "Solution à développer selon votre projet."
+		}
+		if parsed.Marche == "" {
+			parsed.Marche = "Marché cible à identifier."
+		}
+		if parsed.Valeur == "" {
+			parsed.Valeur = "Proposition de valeur unique à définir."
+		}
+		if parsed.Canaux == "" {
+			parsed.Canaux = "Canaux de distribution à mettre en place."
+		}
+		if parsed.Modele == "" {
+			parsed.Modele = "Modèle économique : freemium + abonnement premium ou commissions selon le service."
+		}
 
-	content := resp.Choices[0].Message.Content
-	// Fonction min locale pour éviter la dépendance externe
-	minLen := 500
-	if len(content) < minLen {
-		minLen = len(content)
+		return parsed
 	}
-	log.Printf("Contenu reçu d'OpenAI (premiers 500 caractères): %s", content[:minLen])
-	log.Printf("Longueur totale du contenu: %d caractères", len(content))
 	
-	parsed := parseAIResponse(content)
-	
-	log.Printf("Résultat du parsing - Problème: %t, Solution: %t, Marché: %t, Valeur: %t, Canaux: %t, Modèle: %t",
-		parsed.Probleme != "", parsed.Solution != "", parsed.Marche != "", 
-		parsed.Valeur != "", parsed.Canaux != "", parsed.Modele != "")
-
-	// Si certaines sections restent vides, remplir avec une suggestion minimale basée sur l'entrée
-	if parsed.Probleme == "" {
-		parsed.Probleme = "Problème à définir basé sur votre description."
-	}
-	if parsed.Solution == "" {
-		parsed.Solution = "Solution à développer selon votre projet."
-	}
-	if parsed.Marche == "" {
-		parsed.Marche = "Marché cible à identifier."
-	}
-	if parsed.Valeur == "" {
-		parsed.Valeur = "Proposition de valeur unique à définir."
-	}
-	if parsed.Canaux == "" {
-		parsed.Canaux = "Canaux de distribution à mettre en place."
-	}
-	if parsed.Modele == "" {
-		parsed.Modele = "Modèle économique : freemium + abonnement premium ou commissions selon le service."
-	}
-
-	return parsed
+	// Si on arrive ici, toutes les tentatives ont échoué
+	log.Printf("❌ Toutes les tentatives ont échoué. Dernière erreur: %v", lastErr)
+	return nil
 }
 
 // parseAIResponse extrait les sections françaises du texte retourné par l'IA
