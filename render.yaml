@@ -2,8 +2,8 @@ services:
   - type: web
     name: pitch-ia
     env: go
-    buildCommand: go mod download && go build -o pitch .
-    startCommand: ./pitch
+    buildCommand: go mod download && go build -tags netgo -ldflags '-s -w' -o app .
+    startCommand: ./app
     envVars:
       - key: PORT
         sync: false
