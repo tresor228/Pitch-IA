@@ -145,8 +145,15 @@ func AnalyzePitch(w http.ResponseWriter, r *http.Request) {
 	resp := service.GenerationwithAI(desc)
 	if resp == nil {
 		log.Printf("Génération AI a échoué ou retourné nil")
-		// Si la clé API n'est pas présente ou erreur côté service
-		data.Error = "Impossible de générer le pitch : API non configurée ou erreur interne. Vérifiez la variable d'environnement OPENAI_API_KEY."
+		// Vérifier si la clé API est présente pour donner un message d'erreur plus précis
+		apiKey := os.Getenv("OPENAI_API_KEY")
+		if apiKey == "" {
+			data.Error = "⚠️ La clé API OpenAI n'est pas configurée. Veuillez définir la variable d'environnement OPENAI_API_KEY."
+			log.Printf("Erreur: OPENAI_API_KEY manquante")
+		} else {
+			data.Error = "⚠️ Impossible de générer le pitch. Cela peut être dû à un problème réseau, un timeout ou une erreur de l'API OpenAI. Veuillez réessayer dans quelques instants."
+			log.Printf("Erreur: API OpenAI a échoué malgré la présence de la clé")
+		}
 		// Si c'est une requête AJAX, retourner JSON
 		accept := r.Header.Get("Accept")
 		xreq := r.Header.Get("X-Requested-With")

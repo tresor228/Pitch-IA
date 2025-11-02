@@ -29,13 +29,26 @@
                         class="flex-1 bg-transparent outline-none text-gray-700 placeholder-gray-500 text-lg"
                         required
                         value="{{.UserInput}}"
+                        {{if .Loading}}disabled{{end}}
                     >
                     
-                    <button type="submit" class="ml-2 bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-xl transition-all duration-300 flex items-center justify-center">
+                    <button type="submit" class="ml-2 bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-xl transition-all duration-300 flex items-center justify-center" {{if .Loading}}disabled{{end}}>
+                        {{if .Loading}}
+                        <i class="fas fa-spinner fa-spin"></i>
+                        {{else}}
                         <i class="fas fa-paper-plane"></i>
+                        {{end}}
                     </button>
                 </div>
             </form>
+            
+            <!-- Indicateur de chargement -->
+            {{if .Loading}}
+            <div class="bg-blue-100 text-blue-700 p-4 rounded-xl mb-4 flex items-center">
+                <i class="fas fa-spinner fa-spin mr-3"></i>
+                <span>Génération du pitch en cours, veuillez patienter...</span>
+            </div>
+            {{end}}
         </div>
 
         <!-- Message d'erreur (si présent) -->
@@ -144,7 +157,6 @@
         </div>
         {{end}}
     </div>
-
 
 </body>
 </html>

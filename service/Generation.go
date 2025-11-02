@@ -28,11 +28,11 @@ func GenerationwithAI(input string) *models.PitchResponse {
 
 	prompt := fmt.Sprintf("Génère un pitch structuré pour ce projet en utilisant EXACTEMENT le format ci-dessous (une ligne par section) :\n\n1. [Problème] Décris le problème spécifique que ce projet résout\n2. [Solution] Décris la solution concrète que ce projet apporte\n3. [Marché] Décris le marché cible et l'opportunité\n4. [Valeur] Décris la proposition de valeur unique\n5. [Canaux] Décris les canaux de distribution/acquisition\n6. [Modèle] Décris le modèle économique\n\nDescription du projet : %s\n\nRéponds UNIQUEMENT avec les 6 lignes au format ci-dessus, sans texte avant ou après.", input)
 
-	// Timeout réduit à 45 secondes pour éviter les timeouts Render (qui sont souvent à 30s)
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	// Timeout réduit à 25 secondes pour éviter les timeouts Render/Vercel (qui sont souvent à 30s)
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 
-	log.Printf("Appel à OpenAI avec timeout de 45s")
+	log.Printf("Appel à OpenAI avec timeout de 25s")
 	resp, err := client.CreateChatCompletion(
 		ctx,
 		openai.ChatCompletionRequest{
@@ -51,7 +51,18 @@ func GenerationwithAI(input string) *models.PitchResponse {
 	)
 	if err != nil {
 		log.Printf("ChatCompletion error: %v", err)
-		// Ne pas retourner nil directement, retourner une réponse vide avec erreur
+		// Log détaillé pour le débogage
+		if ctx.Err() == context.DeadlineExceeded {
+			log.Printf("⚠️ Timeout: La requête a pris plus de 25 secondes")
+		}
+		// Log supplémentaire pour les erreurs réseau
+		if strings.Contains(err.Error(), "connection") || strings.Contains(err.Error(), "network") {
+			log.Printf("⚠️ Erreur réseau lors de l'appel à OpenAI")
+		}
+		// Log pour les erreurs d'authentification
+		if strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "unauthorized") || strings.Contains(err.Error(), "invalid") {
+			log.Printf("⚠️ Erreur d'authentification: vérifiez que OPENAI_API_KEY est valide")
+		}
 		return nil
 	}
 
@@ -62,7 +73,12 @@ func GenerationwithAI(input string) *models.PitchResponse {
 	}
 
 	content := resp.Choices[0].Message.Content
-	log.Printf("Contenu reçu d'OpenAI (premiers 500 caractères): %s", content[:min(500, len(content))])
+	// Fonction min locale pour éviter la dépendance externe
+	minLen := 500
+	if len(content) < minLen {
+		minLen = len(content)
+	}
+	log.Printf("Contenu reçu d'OpenAI (premiers 500 caractères): %s", content[:minLen])
 	log.Printf("Longueur totale du contenu: %d caractères", len(content))
 	
 	parsed := parseAIResponse(content)
