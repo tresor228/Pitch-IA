@@ -2,7 +2,7 @@ services:
   - type: web
     name: pitch-ia
     env: go
-    buildCommand: go build -o pitch
+    buildCommand: go mod download && go build -o pitch .
     startCommand: ./pitch
     envVars:
       - key: PORT

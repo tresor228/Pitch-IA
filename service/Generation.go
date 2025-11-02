@@ -31,15 +31,16 @@ func GenerationwithAI(input string) *models.PitchResponse {
 	// Tentative avec retry (max 3 tentatives)
 	maxRetries := 3
 	var lastErr error
-	
+
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		if attempt > 1 {
 			log.Printf("Tentative %d/%d après échec précédent", attempt, maxRetries)
 			time.Sleep(time.Duration(attempt) * time.Second) // Délai progressif
 		}
-		
+
 		// Timeout réduit à 25 secondes pour éviter les timeouts Render/Vercel (qui sont souvent à 30s)
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		defer cancel()
 		
 		log.Printf("Appel à OpenAI (tentative %d/%d) avec timeout de 25s", attempt, maxRetries)
 		resp, err := client.CreateChatCompletion(
@@ -59,13 +60,12 @@ func GenerationwithAI(input string) *models.PitchResponse {
 				Temperature: 0.7, // Température pour des réponses plus consistantes
 			},
 		)
-		cancel()
 		
 		if err != nil {
 			lastErr = err
 			log.Printf("ChatCompletion error (tentative %d): %v", attempt, err)
 			// Log détaillé pour le débogage
-			if ctx.Err() == context.DeadlineExceeded {
+			if err == context.DeadlineExceeded || ctx.Err() == context.DeadlineExceeded {
 				log.Printf("⚠️ Timeout: La requête a pris plus de 25 secondes")
 			}
 			// Log supplémentaire pour les erreurs réseau
@@ -104,7 +104,7 @@ func GenerationwithAI(input string) *models.PitchResponse {
 			log.Printf("❌ Contenu vide après %d tentatives", maxRetries)
 			return nil
 		}
-		
+
 		// Fonction min locale pour éviter la dépendance externe
 		minLen := 500
 		if len(content) < minLen {
@@ -112,20 +112,32 @@ func GenerationwithAI(input string) *models.PitchResponse {
 		}
 		log.Printf("✅ Contenu reçu d'OpenAI (tentative %d, premiers 500 caractères): %s", attempt, content[:minLen])
 		log.Printf("Longueur totale du contenu: %d caractères", len(content))
-		
+
 		parsed := parseAIResponse(content)
-		
+
 		// Compter les sections remplies
 		filledCount := 0
-		if parsed.Probleme != "" { filledCount++ }
-		if parsed.Solution != "" { filledCount++ }
-		if parsed.Marche != "" { filledCount++ }
-		if parsed.Valeur != "" { filledCount++ }
-		if parsed.Canaux != "" { filledCount++ }
-		if parsed.Modele != "" { filledCount++ }
-		
+		if parsed.Probleme != "" {
+			filledCount++
+		}
+		if parsed.Solution != "" {
+			filledCount++
+		}
+		if parsed.Marche != "" {
+			filledCount++
+		}
+		if parsed.Valeur != "" {
+			filledCount++
+		}
+		if parsed.Canaux != "" {
+			filledCount++
+		}
+		if parsed.Modele != "" {
+			filledCount++
+		}
+
 		log.Printf("Résultat du parsing - Sections trouvées: %d/6 (Problème: %t, Solution: %t, Marché: %t, Valeur: %t, Canaux: %t, Modèle: %t)",
-			filledCount, parsed.Probleme != "", parsed.Solution != "", parsed.Marche != "", 
+			filledCount, parsed.Probleme != "", parsed.Solution != "", parsed.Marche != "",
 			parsed.Valeur != "", parsed.Canaux != "", parsed.Modele != "")
 
 		// Si toutes les sections sont vides, c'est un échec de parsing - retry
@@ -138,7 +150,7 @@ func GenerationwithAI(input string) *models.PitchResponse {
 			log.Printf("❌ Parsing complètement échoué après %d tentatives", maxRetries)
 			return nil
 		}
-		
+
 		// Si au moins une section est remplie, on continue mais on remplit les manquantes
 		// Si toutes les sections sont vides après parsing, on retourne nil (pas de fallback)
 		if filledCount < 6 {
@@ -167,7 +179,7 @@ func GenerationwithAI(input string) *models.PitchResponse {
 
 		return parsed
 	}
-	
+
 	// Si on arrive ici, toutes les tentatives ont échoué
 	log.Printf("❌ Toutes les tentatives ont échoué. Dernière erreur: %v", lastErr)
 	return nil
@@ -176,16 +188,16 @@ func GenerationwithAI(input string) *models.PitchResponse {
 // parseAIResponse extrait les sections françaises du texte retourné par l'IA
 func parseAIResponse(content string) *models.PitchResponse {
 	result := &models.PitchResponse{}
-	
+
 	if content == "" {
 		log.Printf("⚠️  Contenu vide reçu pour parsing")
 		return result
 	}
-	
+
 	// Diviser le contenu en lignes pour un meilleur contrôle
 	lines := strings.Split(content, "\n")
 	log.Printf("Nombre de lignes à parser: %d", len(lines))
-	
+
 	// mapping des synonymes vers clés
 	synonyms := map[string][]string{
 		"probleme": {"problème", "probleme"},
@@ -213,21 +225,21 @@ func parseAIResponse(content string) *models.PitchResponse {
 	// Regex pour détecter les en-têtes numérotés: "1. [Label]" ou "1. Label" ou "1) Label"
 	// Pattern plus permissif pour capturer différents formats
 	headerRegex := regexp.MustCompile(`^\s*(\d+)\s*[\.\)]\s*\[?\s*([^\]\:\-–—]+?)\s*\]?\s*[:\-–—]?\s*(.*)$`)
-	
+
 	// Regex alternative plus simple pour détecter juste les numéros suivis de labels
 	// On utilise [^\d] au lieu de [^0-9\n] car c'est plus simple pour RE2
 	simpleHeaderRegex := regexp.MustCompile(`^\s*(\d+)\s*[\.\)]\s*([^\d]+)$`)
-	
+
 	var currentSection string
 	var currentContent []string
-	
+
 	// Fonction pour sauvegarder la section courante
 	saveCurrentSection := func(key string, content []string) {
 		text := strings.TrimSpace(strings.Join(content, "\n"))
 		if text == "" {
 			return
 		}
-		
+
 		switch key {
 		case "probleme":
 			if result.Probleme == "" {
@@ -255,17 +267,17 @@ func parseAIResponse(content string) *models.PitchResponse {
 			}
 		}
 	}
-	
+
 	// Regex pour détecter le début d'une section (sans lookahead - compatible RE2)
 	sectionStartRegex := regexp.MustCompile(`(\d+)\s*[\.\)]\s*\[?\s*([^\]\:\-–—]+?)\s*\]?\s*[:\-–—]?\s*`)
-	
+
 	// Parcourir toutes les lignes
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
 			continue
 		}
-		
+
 		// D'abord, vérifier si la ligne contient plusieurs sections (format compact)
 		// On trouve tous les marqueurs de début de section
 		allStarts := sectionStartRegex.FindAllStringIndex(trimmed, -1)
@@ -278,14 +290,14 @@ func parseAIResponse(content string) *models.PitchResponse {
 				} else {
 					endPos = len(trimmed)
 				}
-				
+
 				sectionText := strings.TrimSpace(trimmed[startPos[0]:endPos])
 				if match := sectionStartRegex.FindStringSubmatch(sectionText); match != nil && len(match) >= 3 {
 					// Sauvegarder la section précédente
 					if currentSection != "" && len(currentContent) > 0 {
 						saveCurrentSection(currentSection, currentContent)
 					}
-					
+
 					label := strings.TrimSpace(match[2])
 					// Extraire le contenu après le label
 					labelEndIdx := sectionStartRegex.FindStringIndex(sectionText)
@@ -297,7 +309,7 @@ func parseAIResponse(content string) *models.PitchResponse {
 						content = strings.TrimSpace(sectionText)
 					}
 					key := detectKey(label)
-					
+
 					if key != "" {
 						currentSection = key
 						currentContent = []string{}
@@ -313,21 +325,21 @@ func parseAIResponse(content string) *models.PitchResponse {
 			if currentSection != "" && len(currentContent) > 0 {
 				saveCurrentSection(currentSection, currentContent)
 			}
-			
+
 			// Nouvelle section détectée
 			label := strings.TrimSpace(match[2])
 			inlineContent := strings.TrimSpace(match[3])
-			
+
 			key := detectKey(label)
 			inlinePreview := inlineContent
 			if len(inlineContent) > 50 {
 				inlinePreview = inlineContent[:50] + "..."
 			}
 			log.Printf("Section détectée: label='%s' -> key='%s', contenu inline='%s'", label, key, inlinePreview)
-			
+
 			currentSection = key
 			currentContent = []string{}
-			
+
 			// Si il y a du contenu inline après le label, l'ajouter
 			if inlineContent != "" {
 				currentContent = append(currentContent, inlineContent)
@@ -339,7 +351,7 @@ func parseAIResponse(content string) *models.PitchResponse {
 				if len(currentContent) > 0 {
 					saveCurrentSection(currentSection, currentContent)
 				}
-				
+
 				// Extraire la nouvelle section
 				if match := headerRegex.FindStringSubmatch(trimmed); match != nil {
 					label := strings.TrimSpace(match[2])
@@ -380,15 +392,15 @@ func parseAIResponse(content string) *models.PitchResponse {
 			}
 		}
 	}
-	
+
 	// Sauvegarder la dernière section
 	if currentSection != "" && len(currentContent) > 0 {
 		saveCurrentSection(currentSection, currentContent)
 	}
-	
+
 	// Log du résultat final
 	log.Printf("Parsing terminé - Sections trouvées: Probleme=%d chars, Solution=%d chars, Marche=%d chars, Valeur=%d chars, Canaux=%d chars, Modele=%d chars",
-		len(result.Probleme), len(result.Solution), len(result.Marche), 
+		len(result.Probleme), len(result.Solution), len(result.Marche),
 		len(result.Valeur), len(result.Canaux), len(result.Modele))
 
 	// Si certaines sections sont encore vides, tenter une extraction simple par labels suivis de ':'

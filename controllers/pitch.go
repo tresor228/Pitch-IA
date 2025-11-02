@@ -31,7 +31,7 @@ func getTemplatePath() string {
 		filepath.Join("views", "Pitch.html"),
 		filepath.Join(".", "views", "Pitch.html"),
 	}
-	
+
 	// Essayer chaque chemin
 	for _, path := range paths {
 		if _, err := os.Stat(path); err == nil {
@@ -42,7 +42,7 @@ func getTemplatePath() string {
 			}
 		}
 	}
-	
+
 	// Fallback vers le chemin relatif (sera résolu au runtime)
 	log.Printf(" Template non trouvé dans les chemins standards, utilisation du chemin relatif")
 	return "views/Pitch.html"
@@ -88,7 +88,7 @@ func AnalyzePitch(w http.ResponseWriter, r *http.Request) {
 
 	// Limiter la taille du body (max 10KB pour la description)
 	r.Body = http.MaxBytesReader(w, r.Body, 10240)
-	
+
 	if err := r.ParseForm(); err != nil {
 		log.Printf("Erreur ParseForm: %v", err)
 		http.Error(w, "Invalid form", http.StatusBadRequest)
