@@ -159,8 +159,8 @@ func parseAIResponse(content string) *models.PitchResponse {
 		}
 	}
 	
-	// Regex pour détecter toutes les sections dans une ligne (format compact)
-	multiSectionRegex := regexp.MustCompile(`(\d+)\s*[\.\)]\s*\[?\s*([^\]\:\-–—]+?)\s*\]?\s*[:\-–—]?\s*([^\d]*?)(?=\d+\s*[\.\)]\s*\[|$)`)
+	// Regex pour détecter le début d'une section (sans lookahead - compatible RE2)
+	sectionStartRegex := regexp.MustCompile(`(\d+)\s*[\.\)]\s*\[?\s*([^\]\:\-–—]+?)\s*\]?\s*[:\-–—]?\s*`)
 	
 	// Parcourir toutes les lignes
 	for _, line := range lines {
@@ -170,17 +170,35 @@ func parseAIResponse(content string) *models.PitchResponse {
 		}
 		
 		// D'abord, vérifier si la ligne contient plusieurs sections (format compact)
-		if matches := multiSectionRegex.FindAllStringSubmatch(trimmed, -1); len(matches) > 1 {
+		// On trouve tous les marqueurs de début de section
+		allStarts := sectionStartRegex.FindAllStringIndex(trimmed, -1)
+		if len(allStarts) > 1 {
 			// Cette ligne contient plusieurs sections, les traiter séparément
-			for _, m := range matches {
-				if len(m) >= 4 {
+			for i, startPos := range allStarts {
+				var endPos int
+				if i+1 < len(allStarts) {
+					endPos = allStarts[i+1][0]
+				} else {
+					endPos = len(trimmed)
+				}
+				
+				sectionText := strings.TrimSpace(trimmed[startPos[0]:endPos])
+				if match := sectionStartRegex.FindStringSubmatch(sectionText); match != nil && len(match) >= 3 {
 					// Sauvegarder la section précédente
 					if currentSection != "" && len(currentContent) > 0 {
 						saveCurrentSection(currentSection, currentContent)
 					}
 					
-					label := strings.TrimSpace(m[2])
-					content := strings.TrimSpace(m[3])
+					label := strings.TrimSpace(match[2])
+					// Extraire le contenu après le label
+					labelEndIdx := sectionStartRegex.FindStringIndex(sectionText)
+					var content string
+					if labelEndIdx != nil && len(labelEndIdx) >= 2 {
+						content = strings.TrimSpace(sectionText[labelEndIdx[1]:])
+					} else {
+						// Fallback: prendre tout après le label trouvé
+						content = strings.TrimSpace(sectionText)
+					}
 					key := detectKey(label)
 					
 					if key != "" {
@@ -212,18 +230,21 @@ func parseAIResponse(content string) *models.PitchResponse {
 			}
 		} else if currentSection != "" {
 			// Vérifier si cette ligne commence une nouvelle section (cas où le format n'est pas standard)
-			if newMatch := multiSectionRegex.FindStringSubmatch(trimmed); newMatch != nil && len(newMatch) >= 4 {
+			if sectionStartRegex.MatchString(trimmed) {
 				// Sauvegarder la section précédente
 				if len(currentContent) > 0 {
 					saveCurrentSection(currentSection, currentContent)
 				}
 				
-				label := strings.TrimSpace(newMatch[2])
-				content := strings.TrimSpace(newMatch[3])
-				currentSection = detectKey(label)
-				currentContent = []string{}
-				if content != "" {
-					currentContent = append(currentContent, content)
+				// Extraire la nouvelle section
+				if match := headerRegex.FindStringSubmatch(trimmed); match != nil {
+					label := strings.TrimSpace(match[2])
+					content := strings.TrimSpace(match[3])
+					currentSection = detectKey(label)
+					currentContent = []string{}
+					if content != "" {
+						currentContent = append(currentContent, content)
+					}
 				}
 			} else if trimmed != "" {
 				// C'est une ligne de contenu normale de la section courante
