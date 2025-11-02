@@ -24,9 +24,9 @@ func GenerationwithAI(input string) *models.PitchResponse {
 	client := openai.NewClient(apiKey)
 	log.Printf("Création du client OpenAI")
 
-	system := "Tu es un assistant qui doit retourner STRICTEMENT un pitch structuré en français avec 6 sections numérotées. Chaque section doit être sur une ligne séparée avec son numéro, suivi du label entre crochets, puis le contenu. Format exact:\n1. [Problème] Texte du problème\n2. [Solution] Texte de la solution\n3. [Marché] Texte du marché\n4. [Valeur] Texte de la valeur\n5. [Canaux] Texte des canaux\n6. [Modèle] Texte du modèle\nNe mélange pas les sections. Chaque section sur sa propre ligne numérotée."
+	system := "Tu es un assistant spécialisé dans la création de pitchs structurés. Tu dois TOUJOURS répondre dans un format STRICT avec 6 sections numérotées en français. Chaque section doit être sur SA PROPRE LIGNE, commençant par le numéro suivi d'un point, puis le label entre crochets, puis le contenu. EXEMPLE DE FORMAT OBLIGATOIRE:\n\n1. [Problème] Texte du problème ici\n2. [Solution] Texte de la solution ici\n3. [Marché] Texte du marché ici\n4. [Valeur] Texte de la valeur ici\n5. [Canaux] Texte des canaux ici\n6. [Modèle] Texte du modèle ici\n\nIMPORTANT: Ne mets RIEN avant la première section. Ne mets RIEN après la dernière section. Une seule section par ligne. Utilise EXACTEMENT ce format avec les numéros, points, crochets et labels en français."
 
-	prompt := fmt.Sprintf("Génère un pitch structuré pour la description suivante. Répond UNIQUEMENT au format ci-dessous, une section par ligne :\n\n1. [Problème] Décris le problème que résout ce projet\n2. [Solution] Décris la solution proposée\n3. [Marché] Décris le marché cible\n4. [Valeur] Décris la proposition de valeur unique\n5. [Canaux] Décris les canaux de distribution\n6. [Modèle] Décris le modèle économique\n\nDescription du projet : %s", input)
+	prompt := fmt.Sprintf("Génère un pitch structuré pour ce projet en utilisant EXACTEMENT le format ci-dessous (une ligne par section) :\n\n1. [Problème] Décris le problème spécifique que ce projet résout\n2. [Solution] Décris la solution concrète que ce projet apporte\n3. [Marché] Décris le marché cible et l'opportunité\n4. [Valeur] Décris la proposition de valeur unique\n5. [Canaux] Décris les canaux de distribution/acquisition\n6. [Modèle] Décris le modèle économique\n\nDescription du projet : %s\n\nRéponds UNIQUEMENT avec les 6 lignes au format ci-dessus, sans texte avant ou après.", input)
 
 	// Timeout réduit à 45 secondes pour éviter les timeouts Render (qui sont souvent à 30s)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
@@ -62,7 +62,14 @@ func GenerationwithAI(input string) *models.PitchResponse {
 	}
 
 	content := resp.Choices[0].Message.Content
+	log.Printf("Contenu reçu d'OpenAI (premiers 500 caractères): %s", content[:min(500, len(content))])
+	log.Printf("Longueur totale du contenu: %d caractères", len(content))
+	
 	parsed := parseAIResponse(content)
+	
+	log.Printf("Résultat du parsing - Problème: %t, Solution: %t, Marché: %t, Valeur: %t, Canaux: %t, Modèle: %t",
+		parsed.Probleme != "", parsed.Solution != "", parsed.Marche != "", 
+		parsed.Valeur != "", parsed.Canaux != "", parsed.Modele != "")
 
 	// Si certaines sections restent vides, remplir avec une suggestion minimale basée sur l'entrée
 	if parsed.Probleme == "" {
@@ -91,8 +98,14 @@ func GenerationwithAI(input string) *models.PitchResponse {
 func parseAIResponse(content string) *models.PitchResponse {
 	result := &models.PitchResponse{}
 	
+	if content == "" {
+		log.Printf("⚠️  Contenu vide reçu pour parsing")
+		return result
+	}
+	
 	// Diviser le contenu en lignes pour un meilleur contrôle
 	lines := strings.Split(content, "\n")
+	log.Printf("Nombre de lignes à parser: %d", len(lines))
 	
 	// mapping des synonymes vers clés
 	synonyms := map[string][]string{
@@ -119,7 +132,12 @@ func parseAIResponse(content string) *models.PitchResponse {
 	}
 
 	// Regex pour détecter les en-têtes numérotés: "1. [Label]" ou "1. Label" ou "1) Label"
+	// Pattern plus permissif pour capturer différents formats
 	headerRegex := regexp.MustCompile(`^\s*(\d+)\s*[\.\)]\s*\[?\s*([^\]\:\-–—]+?)\s*\]?\s*[:\-–—]?\s*(.*)$`)
+	
+	// Regex alternative plus simple pour détecter juste les numéros suivis de labels
+	// On utilise [^\d] au lieu de [^0-9\n] car c'est plus simple pour RE2
+	simpleHeaderRegex := regexp.MustCompile(`^\s*(\d+)\s*[\.\)]\s*([^\d]+)$`)
 	
 	var currentSection string
 	var currentContent []string
@@ -221,7 +239,14 @@ func parseAIResponse(content string) *models.PitchResponse {
 			label := strings.TrimSpace(match[2])
 			inlineContent := strings.TrimSpace(match[3])
 			
-			currentSection = detectKey(label)
+			key := detectKey(label)
+			inlinePreview := inlineContent
+			if len(inlineContent) > 50 {
+				inlinePreview = inlineContent[:50] + "..."
+			}
+			log.Printf("Section détectée: label='%s' -> key='%s', contenu inline='%s'", label, key, inlinePreview)
+			
+			currentSection = key
 			currentContent = []string{}
 			
 			// Si il y a du contenu inline après le label, l'ajouter
@@ -240,7 +265,9 @@ func parseAIResponse(content string) *models.PitchResponse {
 				if match := headerRegex.FindStringSubmatch(trimmed); match != nil {
 					label := strings.TrimSpace(match[2])
 					content := strings.TrimSpace(match[3])
-					currentSection = detectKey(label)
+					key := detectKey(label)
+					log.Printf("Nouvelle section détectée dans ligne: label='%s' -> key='%s'", label, key)
+					currentSection = key
 					currentContent = []string{}
 					if content != "" {
 						currentContent = append(currentContent, content)
@@ -248,7 +275,29 @@ func parseAIResponse(content string) *models.PitchResponse {
 				}
 			} else if trimmed != "" {
 				// C'est une ligne de contenu normale de la section courante
-				currentContent = append(currentContent, trimmed)
+				if currentSection != "" {
+					currentContent = append(currentContent, trimmed)
+				}
+			}
+		} else {
+			// Aucune section active, essayer de trouver le début d'une section avec regex simple
+			if simpleMatch := simpleHeaderRegex.FindStringSubmatch(trimmed); simpleMatch != nil && len(simpleMatch) >= 3 {
+				restOfLine := strings.TrimSpace(simpleMatch[2])
+				// Essayer d'extraire un label du début
+				labelParts := strings.Fields(restOfLine)
+				if len(labelParts) > 0 {
+					possibleLabel := labelParts[0]
+					key := detectKey(possibleLabel)
+					if key != "" {
+						log.Printf("Section trouvée avec regex simple: '%s' -> key='%s'", possibleLabel, key)
+						currentSection = key
+						currentContent = []string{}
+						// Ajouter le reste de la ligne comme contenu
+						if len(labelParts) > 1 {
+							currentContent = append(currentContent, strings.Join(labelParts[1:], " "))
+						}
+					}
+				}
 			}
 		}
 	}
@@ -257,6 +306,11 @@ func parseAIResponse(content string) *models.PitchResponse {
 	if currentSection != "" && len(currentContent) > 0 {
 		saveCurrentSection(currentSection, currentContent)
 	}
+	
+	// Log du résultat final
+	log.Printf("Parsing terminé - Sections trouvées: Probleme=%d chars, Solution=%d chars, Marche=%d chars, Valeur=%d chars, Canaux=%d chars, Modele=%d chars",
+		len(result.Probleme), len(result.Solution), len(result.Marche), 
+		len(result.Valeur), len(result.Canaux), len(result.Modele))
 
 	// Si certaines sections sont encore vides, tenter une extraction simple par labels suivis de ':'
 	// Cette partie ne s'exécute que si le parsing principal n'a pas fonctionné
